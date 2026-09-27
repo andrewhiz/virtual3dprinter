@@ -7,5 +7,7 @@ A fun side project: turn a product photo into an animated virtual 3D print. Visu
 - `analyze`, `model`, `slicer`, `gcode` are pure and DOM-free; keep them that way so tests run in Node.
 - Printer-space coordinates are mm, z up, bed centred at 0. The Three.js root group rotates z-up to y-up.
 - Filament is one InstancedMesh; only upload the instance ranges that change per frame.
-- Commands: `npm run dev`, `npm test`, `npm run typecheck`, `npm run build`.
+- Commands: `npm run dev`, `npm test`, `npm run typecheck`, `npm run build`, `npm run deploy`.
+- Deploy: Cloudflare Workers static assets (`wrangler.jsonc`, no worker script). CI deploys `main`
+  via `.github/workflows/ci-deploy.yml` once CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID secrets exist.
 - TypeScript strict, no `any`. Conventional commits.

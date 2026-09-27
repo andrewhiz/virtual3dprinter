@@ -1,0 +1,12 @@
+// Cloudflare Workers config. The app is fully static, so there is no worker script:
+// Workers serves the Vite build output in dist/ as static assets.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "virtual-3d-printer",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": { "enabled": true }
+}

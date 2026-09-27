@@ -42,6 +42,29 @@ npm run build:single # one self-contained HTML file in dist-single/
 Built with TypeScript, Vite, Three.js and Vitest. There is no backend, and the photo never leaves
 the browser.
 
+## Deploy (Cloudflare Workers)
+
+The site is fully static, so Cloudflare Workers serves the Vite build (`dist/`) as static assets
+with no worker script. See `wrangler.jsonc`. Static asset requests are free on Workers.
+
+**Automatic:** `.github/workflows/ci-deploy.yml` typechecks, tests and builds every push and PR.
+Pushes to `main` then deploy with `wrangler deploy`. The deploy step is skipped with a notice until
+these two repository secrets exist. Add them once:
+
+1. **Account ID**: Cloudflare dashboard → Workers & Pages → copy *Account ID* from the right sidebar.
+2. **API token**: Cloudflare dashboard → My Profile → API Tokens → *Create Token* → use the
+   **Edit Cloudflare Workers** template → scope it to your account → create and copy the token.
+3. On GitHub, go to repo **Settings → Secrets and variables → Actions → New repository secret** and add
+   `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`.
+4. Re-run the latest *CI & Deploy* workflow (Actions tab → *Run workflow*), or push to `main`.
+
+The first deploy creates the `virtual-3d-printer` Worker at
+`https://virtual-3d-printer.<your-subdomain>.workers.dev`. You can add a custom domain under the
+Worker's *Settings → Domains & Routes*.
+
+**Manual:** `npm run deploy` (builds, then runs `wrangler deploy`; logs in through the browser the
+first time). `npm run preview:worker` serves the build locally on the Workers runtime.
+
 ## Ideas
 
 - Use a vision model to classify the object and pick the build mode or a depth profile.
