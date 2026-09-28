@@ -39,6 +39,10 @@ It's a toy: nothing gets exported or printed. It's just fun to watch.
    kept in GPU memory, and switching printers clears the current print because bed size and
    speeds change the slice.
 
+Step two opens with a sample already printing. There are six built-in samples: vase, boxy SUV,
+rocket, chess pawn, rubber duck and a mountain postcard. Between them they show all three build
+modes. Uploading your own photo is marked beta because the cut-out detection is still simple.
+
 Colours come from the photo by default, or you can pick a single filament colour.
 
 ## Run it

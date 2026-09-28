@@ -38,7 +38,12 @@ export interface Analysis {
 /** Transparent padding around the crop so every silhouette is closed. */
 export const PAD = 2;
 
-export function analyzeImage(img: RGBAImage): Analysis {
+export interface AnalyzeOptions {
+  /** Skip cut-out detection and treat the whole picture as the object (for reliefs). */
+  wholeImage?: boolean;
+}
+
+export function analyzeImage(img: RGBAImage, opts: AnalyzeOptions = {}): Analysis {
   const { width: w, height: h, data } = img;
   const n = w * h;
 
@@ -71,7 +76,7 @@ export function analyzeImage(img: RGBAImage): Analysis {
   let count = 0;
   for (let i = 0; i < n; i++) count += mask[i];
   let coverage = count / n;
-  if (coverage < 0.005 || coverage > 0.985) {
+  if (opts.wholeImage || coverage < 0.005 || coverage > 0.985) {
     // Nothing separable from the background: treat the whole photo as the object.
     method = 'fallback';
     mask.fill(1);

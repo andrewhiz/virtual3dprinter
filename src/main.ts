@@ -1,6 +1,6 @@
 import './style.css';
 import { analyzeImage, type Analysis, type Mode, type RGB } from './analyze';
-import { DEMOS, renderDemo } from './demos';
+import { DEMOS, renderDemo, type Demo } from './demos';
 import { GcodeWriter } from './gcode';
 import { buildModel, DEFAULT_MODEL_OPTIONS } from './model';
 import { PRINTERS, printerById, type ControlAction, type PrinterSpec } from './printers';
@@ -22,6 +22,8 @@ let selected: PrinterSpec = printerById(readStored()) ?? PRINTERS[0];
 let analysis: Analysis | null = null;
 let analysisCanvas: HTMLCanvasElement | null = null;
 let modeChoice: Mode | 'auto' = 'auto';
+/** True while the build mode was chosen by a sample rather than by the user. */
+let modeFromSample = false;
 let colorMode: 'photo' | 'filament' = 'photo';
 let gcode = new GcodeWriter(DEFAULT_SLICE_OPTIONS.lineWidth, DEFAULT_SLICE_OPTIONS.layerHeight);
 let gcodeLines: string[] = [];
@@ -95,6 +97,7 @@ $('continue').addEventListener('click', () => {
   $('cur-printer').textContent = selected.name;
   scene.showcase(false);
   showStep();
+  loadDemo(DEMOS[0]);
 });
 
 $('change').addEventListener('click', () => {
@@ -106,6 +109,7 @@ $('change').addEventListener('click', () => {
 
 function showStep(): void {
   const pick = step === 'pick';
+  document.body.dataset.step = step;
   $('pick').hidden = !pick;
   $('work').hidden = pick;
   $('transport').hidden = pick;
@@ -153,6 +157,7 @@ $('mode').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest('button');
   if (!b?.dataset.mode) return;
   modeChoice = b.dataset.mode as Mode | 'auto';
+  modeFromSample = false;
   setSegmented('mode', 'mode', modeChoice);
   scheduleRebuild();
 });
@@ -282,6 +287,8 @@ async function loadFile(file: File): Promise<void> {
   }
   try {
     const bmp = await createImageBitmap(file);
+    setMode('auto');
+    modeFromSample = false;
     loadSource(bmp, bmp.width, bmp.height, file.name.replace(/\.[^.]+$/, ''));
     bmp.close();
     setActiveSample(null);
@@ -291,7 +298,7 @@ async function loadFile(file: File): Promise<void> {
 }
 
 let sourceName = 'model';
-function loadSource(src: CanvasImageSource, w: number, h: number, name: string): void {
+function loadSource(src: CanvasImageSource, w: number, h: number, name: string, wholeImage = false): void {
   const scale = Math.min(1, MAX_ANALYSIS_PX / Math.max(w, h));
   const cw = Math.max(8, Math.round(w * scale));
   const ch = Math.max(8, Math.round(h * scale));
@@ -301,7 +308,7 @@ function loadSource(src: CanvasImageSource, w: number, h: number, name: string):
   const g = cv.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
   g.drawImage(src, 0, 0, cw, ch);
   analysisCanvas = cv;
-  analysis = analyzeImage(g.getImageData(0, 0, cw, ch));
+  analysis = analyzeImage(g.getImageData(0, 0, cw, ch), { wholeImage });
   sourceName = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24) || 'model';
   drawPreview();
   rebuild();
@@ -311,17 +318,38 @@ const samples = $('samples');
 for (const demo of DEMOS) {
   const b = document.createElement('button');
   b.type = 'button';
-  b.textContent = demo.label;
+  b.className = 'sample';
   b.dataset.demo = demo.id;
-  b.addEventListener('click', () => {
-    const cv = renderDemo(demo);
-    loadSource(cv, cv.width, cv.height, demo.id);
-    setActiveSample(demo.id);
-  });
+  b.setAttribute('role', 'radio');
+  const img = document.createElement('img');
+  img.src = renderDemo(demo, 120).toDataURL();
+  img.alt = '';
+  const label = document.createElement('span');
+  label.textContent = demo.label;
+  b.append(img, label);
+  b.addEventListener('click', () => loadDemo(demo));
   samples.appendChild(b);
 }
+
+function loadDemo(demo: Demo): void {
+  setMode(demo.mode ?? 'auto');
+  modeFromSample = !!demo.mode;
+  const cv = renderDemo(demo);
+  loadSource(cv, cv.width, cv.height, demo.id, demo.mode === 'relief');
+  setActiveSample(demo.id);
+}
+
+function setMode(mode: Mode | 'auto'): void {
+  modeChoice = mode;
+  setSegmented('mode', 'mode', modeChoice);
+}
+
 function setActiveSample(id: string | null): void {
-  samples.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.classList.toggle('on', b.dataset.demo === id));
+  samples.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+    const on = b.dataset.demo === id;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', String(on));
+  });
 }
 
 // ---------- Analysis readout ----------
@@ -389,7 +417,8 @@ function scheduleRebuild(): void {
 function rebuild(): void {
   if (!analysis || step !== 'work') return;
   const mode: Mode = modeChoice === 'auto' ? analysis.suggestedMode : modeChoice;
-  $('r-shape').textContent = modeChoice === 'auto' ? MODE_TEXT[mode] : `${mode[0].toUpperCase()}${mode.slice(1)} (your pick)`;
+  $('r-shape').textContent =
+    modeChoice === 'auto' ? MODE_TEXT[mode] : modeFromSample ? 'Scenic photo: relief plaque' : `${mode[0].toUpperCase()}${mode.slice(1)} (your pick)`;
 
   const model = buildModel(analysis, {
     ...DEFAULT_MODEL_OPTIONS,

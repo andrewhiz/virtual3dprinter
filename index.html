@@ -39,16 +39,17 @@
           </div>
 
           <section class="block">
-            <h2>Photo</h2>
-            <label class="drop" id="drop" for="file">
-              <input id="file" type="file" accept="image/*" />
-              <span class="drop-title">Upload a product photo</span>
-              <span class="drop-hint">PNG with transparency or a plain background works best</span>
-            </label>
-            <div class="samples">
-              <span class="label">Or try a sample</span>
-              <div class="chips" id="samples"></div>
-            </div>
+            <h2>Pick something to print</h2>
+            <div class="sample-grid" id="samples" role="radiogroup" aria-label="Sample objects"></div>
+            <details class="upload" id="upload">
+              <summary>Use your own photo <span class="beta">Beta</span></summary>
+              <p class="note">Photo detection is simple for now. A single product on a plain or transparent background works best.</p>
+              <label class="drop" id="drop" for="file">
+                <input id="file" type="file" accept="image/*" />
+                <span class="drop-title">Choose a photo</span>
+                <span class="drop-hint">Or drop / paste an image here</span>
+              </label>
+            </details>
           </section>
 
           <section class="block">

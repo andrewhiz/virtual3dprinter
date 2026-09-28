@@ -55,6 +55,13 @@ describe('analyzeImage', () => {
     expect(a.suggestedMode).toBe('relief');
   });
 
+  it('uses the whole picture when asked, even if an object stands out', () => {
+    const img = image(50, 50, (x, y) => (Math.hypot(x - 25, y - 25) < 10 ? [0, 0, 0, 255] : [255, 255, 255, 255]));
+    const a = analyzeImage(img, { wholeImage: true });
+    expect(a.method).toBe('fallback');
+    expect(a.crop).toEqual({ x: 0, y: 0, w: 50, h: 50 });
+  });
+
   it('produces a signed distance field that is positive inside', () => {
     const img = image(50, 50, (x, y) => (x >= 10 && x < 40 && y >= 10 && y < 40 ? [0, 0, 0, 255] : [255, 255, 255, 255]));
     const a = analyzeImage(img);

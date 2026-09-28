@@ -55,6 +55,7 @@ export class PrinterScene {
   private panelClock = 0;
   private hoverKnob = false;
   private downAt: { x: number; y: number } | null = null;
+  private userMoved = false;
 
   playing = false;
   speed = 25;
@@ -91,6 +92,7 @@ export class PrinterScene {
     this.controls.minDistance = 80;
     this.controls.maxDistance = 2200;
     this.controls.autoRotateSpeed = 0.9;
+    this.controls.addEventListener('start', () => (this.userMoved = true));
 
     this.scene.background = new THREE.Color(0x15171a);
     this.scene.fog = new THREE.Fog(0x15171a, 1800, 4200);
@@ -151,6 +153,7 @@ export class PrinterScene {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    if (!this.userMoved) this.resetView();
   }
 
   // ---------- Printer lifecycle ----------
@@ -181,8 +184,11 @@ export class PrinterScene {
 
   resetView(): void {
     if (!this.spec) return;
-    this.camera.position.set(...this.spec.camera.position);
+    this.userMoved = false;
     this.controls.target.set(...this.spec.camera.target);
+    // Back the camera off on tall, narrow screens so the whole printer still fits.
+    const fit = this.camera.aspect < 1.25 ? Math.min(2.1, (1.25 / this.camera.aspect) ** 0.75) : 1;
+    this.camera.position.set(...this.spec.camera.position).sub(this.controls.target).multiplyScalar(fit).add(this.controls.target);
   }
 
   setLight(on: boolean): void {
