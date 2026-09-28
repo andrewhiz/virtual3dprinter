@@ -16,80 +16,100 @@
       <aside class="panel">
         <header class="brand">
           <h1>Virtual 3D Printer</h1>
-          <p>Drop in a product photo. We find the object, slice it, and print it layer by layer.</p>
+          <p>Pick a machine, drop in a product photo, and watch it print layer by layer.</p>
         </header>
 
-        <section class="block">
-          <h2>Photo</h2>
-          <label class="drop" id="drop" for="file">
-            <input id="file" type="file" accept="image/*" />
-            <span class="drop-title">Upload a product photo</span>
-            <span class="drop-hint">PNG with transparency or a plain background works best</span>
-          </label>
-          <div class="samples">
-            <span class="label">Samples</span>
-            <div class="chips" id="samples"></div>
-          </div>
+        <ol class="steps" aria-label="Progress">
+          <li id="step-1" class="on"><span>1</span>Printer</li>
+          <li id="step-2"><span>2</span>Photo &amp; print</li>
+        </ol>
+
+        <section id="pick" class="block">
+          <h2>Choose your printer</h2>
+          <div class="printer-list" id="printers" role="radiogroup" aria-label="Printer"></div>
+          <button type="button" id="continue" class="cta">Continue</button>
+          <p class="note">Drag to orbit the printer. Its buttons work too. Switching printers later clears the current print.</p>
         </section>
 
-        <section class="block">
-          <h2>What we found</h2>
-          <div class="analysis">
-            <canvas id="preview" width="240" height="240" aria-label="Detected object outline"></canvas>
-            <dl class="readout">
-              <div><dt>Shape</dt><dd id="r-shape">–</dd></div>
-              <div><dt>Symmetry</dt><dd id="r-sym">–</dd></div>
-              <div><dt>Cut-out</dt><dd id="r-method">–</dd></div>
-              <div><dt>Filament</dt><dd><span class="swatch" id="r-swatch"></span><span id="r-color">–</span></dd></div>
-            </dl>
+        <div id="work" hidden>
+          <div class="machine">
+            <span class="label">Printing on</span>
+            <strong id="cur-printer">–</strong>
+            <button type="button" id="change" class="ghost">Change printer</button>
           </div>
-        </section>
 
-        <section class="block">
-          <h2>Print settings</h2>
-          <div class="field">
-            <span class="label" id="mode-label">Build as</span>
-            <div class="segmented" id="mode" role="radiogroup" aria-labelledby="mode-label">
-              <button type="button" data-mode="auto" role="radio">Auto</button>
-              <button type="button" data-mode="revolve" role="radio" title="Spin the outline around its centre: vases, bottles, cups">Revolve</button>
-              <button type="button" data-mode="standee" role="radio" title="Stand the outline up and give it depth">Standee</button>
-              <button type="button" data-mode="relief" role="radio" title="Lay the photo flat; darker areas rise higher">Relief</button>
+          <section class="block">
+            <h2>Photo</h2>
+            <label class="drop" id="drop" for="file">
+              <input id="file" type="file" accept="image/*" />
+              <span class="drop-title">Upload a product photo</span>
+              <span class="drop-hint">PNG with transparency or a plain background works best</span>
+            </label>
+            <div class="samples">
+              <span class="label">Or try a sample</span>
+              <div class="chips" id="samples"></div>
             </div>
-          </div>
-          <label class="field range">
-            <span class="label">Size <output id="size-out"></output></span>
-            <input id="size" type="range" min="40" max="160" step="5" value="90" />
-          </label>
-          <label class="field range">
-            <span class="label">Layer height <output id="lh-out"></output></span>
-            <input id="lh" type="range" min="0.4" max="2" step="0.1" value="0.8" />
-          </label>
-          <label class="field range">
-            <span class="label">Infill <output id="infill-out"></output></span>
-            <input id="infill" type="range" min="10" max="60" step="5" value="25" />
-          </label>
-          <div class="field">
-            <span class="label" id="color-label">Colour</span>
-            <div class="segmented" id="colormode" role="radiogroup" aria-labelledby="color-label">
-              <button type="button" data-color="photo" role="radio">From photo</button>
-              <button type="button" data-color="filament" role="radio">Single filament</button>
-            </div>
-            <input id="filament" type="color" value="#ff8c3c" aria-label="Filament colour" />
-          </div>
-        </section>
+          </section>
 
-        <section class="block stats">
-          <div><span class="label">Layers</span><strong id="s-layers">–</strong></div>
-          <div><span class="label">Moves</span><strong id="s-moves">–</strong></div>
-          <div><span class="label">Filament</span><strong id="s-fil">–</strong></div>
-          <div><span class="label">Print time</span><strong id="s-time">–</strong></div>
-        </section>
+          <section class="block">
+            <h2>What we found</h2>
+            <div class="analysis">
+              <canvas id="preview" width="240" height="240" aria-label="Detected object outline"></canvas>
+              <dl class="readout">
+                <div><dt>Shape</dt><dd id="r-shape">–</dd></div>
+                <div><dt>Symmetry</dt><dd id="r-sym">–</dd></div>
+                <div><dt>Cut-out</dt><dd id="r-method">–</dd></div>
+                <div><dt>Filament</dt><dd><span class="swatch" id="r-swatch"></span><span id="r-color">–</span></dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="block">
+            <h2>Print settings</h2>
+            <div class="field">
+              <span class="label" id="mode-label">Build as</span>
+              <div class="segmented" id="mode" role="radiogroup" aria-labelledby="mode-label">
+                <button type="button" data-mode="auto" role="radio">Auto</button>
+                <button type="button" data-mode="revolve" role="radio" title="Spin the outline around its centre: vases, bottles, cups">Revolve</button>
+                <button type="button" data-mode="standee" role="radio" title="Stand the outline up and give it depth">Standee</button>
+                <button type="button" data-mode="relief" role="radio" title="Lay the photo flat; darker areas rise higher">Relief</button>
+              </div>
+            </div>
+            <label class="field range">
+              <span class="label">Size <output id="size-out"></output></span>
+              <input id="size" type="range" min="40" max="200" step="5" value="90" />
+            </label>
+            <label class="field range">
+              <span class="label">Layer height <output id="lh-out"></output></span>
+              <input id="lh" type="range" min="0.4" max="2" step="0.1" value="0.8" />
+            </label>
+            <label class="field range">
+              <span class="label">Infill <output id="infill-out"></output></span>
+              <input id="infill" type="range" min="10" max="60" step="5" value="25" />
+            </label>
+            <div class="field">
+              <span class="label" id="color-label">Colour</span>
+              <div class="segmented" id="colormode" role="radiogroup" aria-labelledby="color-label">
+                <button type="button" data-color="photo" role="radio">From photo</button>
+                <button type="button" data-color="filament" role="radio">Single filament</button>
+              </div>
+              <input id="filament" type="color" value="#ff8c3c" aria-label="Filament colour" />
+            </div>
+          </section>
+
+          <section class="block stats">
+            <div><span class="label">Layers</span><strong id="s-layers">–</strong></div>
+            <div><span class="label">Moves</span><strong id="s-moves">–</strong></div>
+            <div><span class="label">Filament</span><strong id="s-fil">–</strong></div>
+            <div><span class="label">Print time</span><strong id="s-time">–</strong></div>
+          </section>
+        </div>
       </aside>
 
       <main class="stage">
         <div id="viewport" class="viewport"></div>
 
-        <div class="hud">
+        <div class="hud" id="hud">
           <div class="hud-row">
             <span class="hud-layer">Layer <strong id="h-layer">0</strong> / <span id="h-layers">0</span></span>
             <span class="hud-time" id="h-time">00:00:00</span>
@@ -98,12 +118,13 @@
           <div class="temps">
             <span><i class="dot hot"></i>Nozzle <b id="h-noz">24</b>°C</span>
             <span><i class="dot warm"></i>Bed <b id="h-bed">24</b>°C</span>
+            <span id="h-chamber-wrap" hidden><i class="dot cool"></i>Chamber <b id="h-chamber">24</b>°C</span>
           </div>
         </div>
 
         <pre class="gcode" id="gcode" aria-label="G-code stream"></pre>
 
-        <div class="transport">
+        <div class="transport" id="transport">
           <button type="button" id="restart" class="icon" title="Restart print" aria-label="Restart print">
             <svg viewBox="0 0 24 24"><path d="M12 5a7 7 0 1 1-6.6 4.7" /><path d="M5 4v5h5" /></svg>
           </button>
@@ -116,7 +137,13 @@
             <input id="speed" type="range" min="0" max="100" value="50" />
           </label>
           <label class="toggle"><input id="follow" type="checkbox" /> Follow nozzle</label>
+          <label class="toggle"><input id="light" type="checkbox" checked /> Light</label>
           <button type="button" id="view" class="ghost">Reset view</button>
+        </div>
+
+        <div class="empty" id="empty" hidden>
+          <strong>Printer ready</strong>
+          <span>Upload a photo or pick a sample to start the print.</span>
         </div>
 
         <div class="toast" id="toast" hidden></div>

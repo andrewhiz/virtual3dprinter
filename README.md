@@ -21,10 +21,23 @@ It's a toy: nothing gets exported or printed. It's just fun to watch.
 3. **Slice it** (`src/slicer.ts`). Each layer is sampled on a grid. Two walls are traced with
    marching squares. Diagonal infill alternates direction every layer, and the top and bottom
    layers are solid. The moves are then ordered to keep travel between them short.
-4. **Print it** (`src/printer.ts`). A Three.js bed-slinger printer carries out the moves: the bed
-   slides in Y, the gantry climbs in Z, the hot end runs in X, and the spool turns as it feeds.
-   All deposited filament is drawn by a single `InstancedMesh` that grows one move at a time. A
-   cosmetic G-code stream (`src/gcode.ts`) scrolls alongside.
+4. **Print it** (`src/scene.ts`, `src/printers/`). First pick one of three machines. Each one has
+   its own geometry, kinematics and controls:
+   - **Slinger i3**: a Cartesian bed-slinger. The bed runs in Y, the gantry climbs Z, the head
+     runs X. It has a blue 12864 LCD and a rotary knob.
+   - **Cube XY**: an enclosed CoreXY. The head flies in X/Y at the top and the bed drops in Z.
+     It has a colour touchscreen, chamber light and chamber temperature.
+   - **Kossel Delta**: three towers and six parallel arms, with carriage heights from real delta
+     inverse kinematics. It has a round glass bed and an amber OLED.
+
+   Every printer has a working control panel: a live status screen plus clickable 3D buttons for
+   restart, play/pause, skip to end, slower, faster and light. On the Slinger you can also scroll
+   the knob to change speed. All deposited filament is drawn by a single `InstancedMesh` that
+   grows one move at a time. A cosmetic G-code stream (`src/gcode.ts`) scrolls alongside.
+
+   Printers are built from code (no model downloads, nothing stored). Only the selected printer is
+   kept in GPU memory, and switching printers clears the current print because bed size and
+   speeds change the slice.
 
 Colours come from the photo by default, or you can pick a single filament colour.
 

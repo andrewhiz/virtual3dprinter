@@ -3,27 +3,141 @@ import { analyzeImage, type Analysis, type Mode, type RGB } from './analyze';
 import { DEMOS, renderDemo } from './demos';
 import { GcodeWriter } from './gcode';
 import { buildModel, DEFAULT_MODEL_OPTIONS } from './model';
-import { PrinterScene, type PrintStatus } from './printer';
+import { PRINTERS, printerById, type ControlAction, type PrinterSpec } from './printers';
+import { PrinterScene, type PrintStatus } from './scene';
 import { DEFAULT_SLICE_OPTIONS, slice, type SliceResult } from './slicer';
 
 const MAX_ANALYSIS_PX = 180;
 const GCODE_LINES = 14;
 const DONE_LINE = '; print complete';
+const SPEEDS = [1, 2, 5, 10, 25, 50, 100, 200, 500];
+const PRINTER_KEY = 'v3dp.printer';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const scene = new PrinterScene($('viewport'));
 
+let step: 'pick' | 'work' = 'pick';
+let selected: PrinterSpec = printerById(readStored()) ?? PRINTERS[0];
 let analysis: Analysis | null = null;
 let analysisCanvas: HTMLCanvasElement | null = null;
 let modeChoice: Mode | 'auto' = 'auto';
 let colorMode: 'photo' | 'filament' = 'photo';
 let gcode = new GcodeWriter(DEFAULT_SLICE_OPTIONS.lineWidth, DEFAULT_SLICE_OPTIONS.layerHeight);
 let gcodeLines: string[] = [];
-let nozzleTemp = 24;
-let bedTemp = 24;
 
-// ---------- Inputs ----------
+function readStored(): string | null {
+  try {
+    return localStorage.getItem(PRINTER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+// ---------- Step 1: printer picker ----------
+
+const cards = $('printers');
+for (const p of PRINTERS) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'printer-card';
+  card.dataset.id = p.id;
+  card.setAttribute('role', 'radio');
+  card.style.setProperty('--card-accent', p.accent);
+  card.innerHTML = `
+    <span class="pc-head"><span class="pc-name"></span><span class="pc-cat"></span></span>
+    <span class="pc-blurb"></span>
+    <dl class="pc-specs"></dl>`;
+  (card.querySelector('.pc-name') as HTMLElement).textContent = p.name;
+  (card.querySelector('.pc-cat') as HTMLElement).textContent = p.category;
+  (card.querySelector('.pc-blurb') as HTMLElement).textContent = p.blurb;
+  const dl = card.querySelector('.pc-specs') as HTMLElement;
+  for (const [k, v] of p.specs) {
+    const row = document.createElement('div');
+    const dt = document.createElement('dt');
+    const dd = document.createElement('dd');
+    dt.textContent = k;
+    dd.textContent = v;
+    row.append(dt, dd);
+    dl.appendChild(row);
+  }
+  card.addEventListener('click', () => previewPrinter(p));
+  cards.appendChild(card);
+}
+
+function previewPrinter(p: PrinterSpec): void {
+  const changed = p.id !== scene.printer?.id;
+  selected = p;
+  cards.querySelectorAll<HTMLButtonElement>('.printer-card').forEach((c) => {
+    const on = c.dataset.id === p.id;
+    c.classList.toggle('on', on);
+    c.setAttribute('aria-checked', String(on));
+  });
+  $('continue').textContent = `Continue with ${p.name}`;
+  document.documentElement.style.setProperty('--hot', p.accent);
+  if (changed) {
+    scene.setPrinter(p);
+    scene.showcase(true);
+  }
+}
+
+$('continue').addEventListener('click', () => {
+  try {
+    localStorage.setItem(PRINTER_KEY, selected.id);
+  } catch {
+    // Remembering the printer is only a convenience.
+  }
+  step = 'work';
+  const size = $<HTMLInputElement>('size');
+  size.max = String(selected.maxHeight);
+  if (Number(size.value) > selected.maxHeight) size.value = String(selected.maxHeight);
+  size.dispatchEvent(new Event('input'));
+  $('cur-printer').textContent = selected.name;
+  scene.showcase(false);
+  showStep();
+});
+
+$('change').addEventListener('click', () => {
+  resetSession();
+  step = 'pick';
+  scene.showcase(true);
+  showStep();
+});
+
+function showStep(): void {
+  const pick = step === 'pick';
+  $('pick').hidden = !pick;
+  $('work').hidden = pick;
+  $('transport').hidden = pick;
+  $('gcode').hidden = pick;
+  $('hud').hidden = pick;
+  $('step-1').classList.toggle('on', pick);
+  $('step-2').classList.toggle('on', !pick);
+  $('step-1').setAttribute('aria-current', pick ? 'step' : 'false');
+  $('step-2').setAttribute('aria-current', pick ? 'false' : 'step');
+  syncEmpty();
+  syncPlay();
+}
+
+/** Forget the photo and the print; the printer build and GPU buffers are rebuilt on switch. */
+function resetSession(): void {
+  analysis = null;
+  analysisCanvas = null;
+  scene.clearPrint();
+  setActiveSample(null);
+  const cv = $<HTMLCanvasElement>('preview');
+  (cv.getContext('2d') as CanvasRenderingContext2D).clearRect(0, 0, cv.width, cv.height);
+  for (const id of ['r-shape', 'r-sym', 'r-method', 'r-color', 's-layers', 's-moves', 's-fil', 's-time']) $(id).textContent = '–';
+  $('r-swatch').style.background = 'transparent';
+  gcodeLines = [];
+  $('gcode').textContent = '';
+}
+
+function syncEmpty(): void {
+  $('empty').hidden = !(step === 'work' && !scene.hasPrint);
+}
+
+// ---------- Step 2: inputs ----------
 
 function setSegmented(groupId: string, attr: string, value: string): void {
   $(groupId)
@@ -69,28 +183,51 @@ for (const [id, out, fmt] of sliders) {
 $('filament').addEventListener('input', scheduleRebuild);
 
 const speedInput = $<HTMLInputElement>('speed');
-const applySpeed = () => {
-  const v = Number(speedInput.value) / 100;
-  scene.speed = Math.max(1, Math.round(10 ** (v * Math.log10(500))));
+function setSpeed(v: number): void {
+  scene.speed = Math.max(1, Math.min(500, Math.round(v)));
+  speedInput.value = String((Math.log10(scene.speed) / Math.log10(500)) * 100);
   $('speed-out').textContent = `${scene.speed}×`;
-};
-speedInput.addEventListener('input', applySpeed);
-applySpeed();
+}
+speedInput.addEventListener('input', () => {
+  scene.speed = Math.max(1, Math.round(10 ** ((Number(speedInput.value) / 100) * Math.log10(500))));
+  $('speed-out').textContent = `${scene.speed}×`;
+});
+setSpeed(25);
 
-$('play').addEventListener('click', () => {
-  if (scene.finished) restartPrint();
-  scene.playing = !scene.playing;
+function control(action: ControlAction): void {
+  switch (action) {
+    case 'toggle':
+      if (!scene.hasPrint) return;
+      if (scene.finished) restartPrint();
+      scene.playing = !scene.playing;
+      break;
+    case 'restart':
+      if (!scene.hasPrint) return;
+      restartPrint();
+      scene.playing = true;
+      break;
+    case 'finish':
+      scene.finish();
+      break;
+    case 'faster':
+      setSpeed(SPEEDS.find((s) => s > scene.speed) ?? 500);
+      break;
+    case 'slower':
+      setSpeed([...SPEEDS].reverse().find((s) => s < scene.speed) ?? 1);
+      break;
+    case 'light':
+      scene.setLight(!scene.light);
+      $<HTMLInputElement>('light').checked = scene.light;
+      break;
+  }
   syncPlay();
-});
-$('restart').addEventListener('click', () => {
-  restartPrint();
-  scene.playing = true;
-  syncPlay();
-});
-$('finish').addEventListener('click', () => {
-  scene.finish();
-  syncPlay();
-});
+}
+scene.onControl = control;
+
+$('play').addEventListener('click', () => control('toggle'));
+$('restart').addEventListener('click', () => control('restart'));
+$('finish').addEventListener('click', () => control('finish'));
+$<HTMLInputElement>('light').addEventListener('change', (e) => scene.setLight((e.target as HTMLInputElement).checked));
 $<HTMLInputElement>('follow').addEventListener('change', (e) => {
   scene.follow = (e.target as HTMLInputElement).checked;
 });
@@ -101,10 +238,11 @@ $('view').addEventListener('click', () => {
 });
 
 function syncPlay(): void {
-  const btn = $('play');
-  const label = scene.playing ? 'Pause' : scene.finished ? 'Print again' : 'Resume';
+  const btn = $<HTMLButtonElement>('play');
+  const label = scene.playing ? 'Pause' : scene.finished ? 'Print again' : scene.hasPrint && scene.state === 'paused' ? 'Resume' : 'Start';
   btn.textContent = label;
   btn.setAttribute('aria-label', label);
+  for (const id of ['play', 'restart', 'finish']) $<HTMLButtonElement>(id).disabled = !scene.hasPrint;
 }
 
 // ---------- Image loading ----------
@@ -120,17 +258,18 @@ const drop = $('drop');
 for (const target of [drop, $('viewport')]) {
   target.addEventListener('dragover', (e) => {
     e.preventDefault();
-    drop.classList.add('over');
+    if (step === 'work') drop.classList.add('over');
   });
   target.addEventListener('dragleave', () => drop.classList.remove('over'));
   target.addEventListener('drop', (e) => {
     e.preventDefault();
     drop.classList.remove('over');
     const f = e.dataTransfer?.files?.[0];
-    if (f) void loadFile(f);
+    if (f && step === 'work') void loadFile(f);
   });
 }
 window.addEventListener('paste', (e) => {
+  if (step !== 'work') return;
   const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith('image/'));
   const f = item?.getAsFile();
   if (f) void loadFile(f);
@@ -143,7 +282,7 @@ async function loadFile(file: File): Promise<void> {
   }
   try {
     const bmp = await createImageBitmap(file);
-    loadSource(bmp, bmp.width, bmp.height);
+    loadSource(bmp, bmp.width, bmp.height, file.name.replace(/\.[^.]+$/, ''));
     bmp.close();
     setActiveSample(null);
   } catch {
@@ -151,7 +290,8 @@ async function loadFile(file: File): Promise<void> {
   }
 }
 
-function loadSource(src: CanvasImageSource, w: number, h: number): void {
+let sourceName = 'model';
+function loadSource(src: CanvasImageSource, w: number, h: number, name: string): void {
   const scale = Math.min(1, MAX_ANALYSIS_PX / Math.max(w, h));
   const cw = Math.max(8, Math.round(w * scale));
   const ch = Math.max(8, Math.round(h * scale));
@@ -162,6 +302,7 @@ function loadSource(src: CanvasImageSource, w: number, h: number): void {
   g.drawImage(src, 0, 0, cw, ch);
   analysisCanvas = cv;
   analysis = analyzeImage(g.getImageData(0, 0, cw, ch));
+  sourceName = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24) || 'model';
   drawPreview();
   rebuild();
 }
@@ -174,7 +315,7 @@ for (const demo of DEMOS) {
   b.dataset.demo = demo.id;
   b.addEventListener('click', () => {
     const cv = renderDemo(demo);
-    loadSource(cv, cv.width, cv.height);
+    loadSource(cv, cv.width, cv.height, demo.id);
     setActiveSample(demo.id);
   });
   samples.appendChild(b);
@@ -201,7 +342,6 @@ function drawPreview(): void {
   g.imageSmoothingEnabled = true;
   g.drawImage(src, ox, oy, dw, dh);
 
-  // Dim the background and trace the detected outline.
   const w = src.width, h = src.height;
   const over = document.createElement('canvas');
   over.width = w;
@@ -209,16 +349,15 @@ function drawPreview(): void {
   const og = over.getContext('2d') as CanvasRenderingContext2D;
   const img = og.createImageData(w, h);
   const m = a.sourceMask;
+  const accent = selected.accent;
+  const ar = parseInt(accent.slice(1, 3), 16), ag = parseInt(accent.slice(3, 5), 16), ab = parseInt(accent.slice(5, 7), 16);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = y * w + x;
       const edge = m[i] && (x === 0 || y === 0 || x === w - 1 || y === h - 1 || !m[i - 1] || !m[i + 1] || !m[i - w] || !m[i + w]);
       const p = i * 4;
-      if (edge) {
-        img.data.set([255, 138, 61, 255], p);
-      } else if (!m[i]) {
-        img.data.set([14, 16, 18, 190], p);
-      }
+      if (edge) img.data.set([ar, ag, ab, 255], p);
+      else if (!m[i]) img.data.set([14, 16, 18, 190], p);
     }
   }
   og.putImageData(img, 0, 0);
@@ -248,7 +387,7 @@ function scheduleRebuild(): void {
 }
 
 function rebuild(): void {
-  if (!analysis) return;
+  if (!analysis || step !== 'work') return;
   const mode: Mode = modeChoice === 'auto' ? analysis.suggestedMode : modeChoice;
   $('r-shape').textContent = modeChoice === 'auto' ? MODE_TEXT[mode] : `${mode[0].toUpperCase()}${mode.slice(1)} (your pick)`;
 
@@ -256,6 +395,7 @@ function rebuild(): void {
     ...DEFAULT_MODEL_OPTIONS,
     mode,
     sizeMm: Number($<HTMLInputElement>('size').value),
+    maxFootprintMm: selected.maxFootprint,
   });
   const hexColor = $<HTMLInputElement>('filament').value;
   const filamentColor: RGB = [1, 3, 5].map((i) => parseInt(hexColor.slice(i, i + 2), 16)) as RGB;
@@ -270,9 +410,11 @@ function rebuild(): void {
   gcode = new GcodeWriter(opts.lineWidth, opts.layerHeight);
   showStats(result);
   scene.load(result);
+  scene.fileName = `${sourceName}.gcode`;
   restartPrint();
   scene.playing = true;
   syncPlay();
+  syncEmpty();
 }
 
 function restartPrint(): void {
@@ -287,7 +429,7 @@ function showStats(r: SliceResult): void {
   $('s-layers').textContent = r.layerCount.toLocaleString();
   $('s-moves').textContent = r.moves.length.toLocaleString();
   $('s-fil').textContent = `${filamentM.toFixed(1)} m`;
-  $('s-time').textContent = clock(r.extrudeMm / 60 + r.travelMm / 150);
+  $('s-time').textContent = clock(r.extrudeMm / selected.printSpeed + r.travelMm / selected.travelSpeed);
 }
 
 function clock(sec: number): string {
@@ -297,28 +439,30 @@ function clock(sec: number): string {
 }
 
 let lastHud = 0;
+let lastState = '';
 scene.onStatus = (s: PrintStatus) => {
   for (const m of s.newMoves) gcodeLines.push(...gcode.lines(m));
-  if (s.finished && gcodeLines[gcodeLines.length - 1] !== DONE_LINE) {
+  if (s.state === 'done' && gcodeLines.length && gcodeLines[gcodeLines.length - 1] !== DONE_LINE) {
     gcodeLines.push('G91', 'G1 Z20 ; park', 'M104 S0', 'M140 S0', DONE_LINE);
   }
   if (gcodeLines.length > GCODE_LINES * 4) gcodeLines = gcodeLines.slice(-GCODE_LINES);
+  if (s.state !== lastState) {
+    lastState = s.state;
+    syncPlay();
+  }
 
   const now = performance.now();
-  if (now - lastHud < 60 && s.playing) return;
+  if (now - lastHud < 80) return;
   lastHud = now;
-
-  const active = s.progress > 0 && !s.finished;
-  nozzleTemp += ((active ? 210 : s.finished ? 60 : 24) - nozzleTemp) * 0.15;
-  bedTemp += ((active || s.finished ? 60 : 24) - bedTemp) * 0.1;
-  $('h-noz').textContent = String(Math.round(nozzleTemp));
-  $('h-bed').textContent = String(Math.round(bedTemp));
-  $('h-layer').textContent = String(s.finished ? s.layerCount : s.layer);
+  $('h-noz').textContent = String(Math.round(s.nozzle));
+  $('h-bed').textContent = String(Math.round(s.bed));
+  $('h-chamber-wrap').hidden = s.chamber === null;
+  if (s.chamber !== null) $('h-chamber').textContent = String(Math.round(s.chamber));
+  $('h-layer').textContent = String(s.layer);
   $('h-layers').textContent = String(s.layerCount);
   $('h-time').textContent = `${clock(s.printSeconds)} / ${clock(s.totalSeconds)}`;
-  $('h-bar').style.width = `${(s.finished ? 1 : s.progress) * 100}%`;
-  $('gcode').textContent = gcodeLines.slice(-GCODE_LINES).join('\n');
-  if (s.finished) syncPlay();
+  $('h-bar').style.width = `${s.progress * 100}%`;
+  if (step === 'work') $('gcode').textContent = gcodeLines.slice(-GCODE_LINES).join('\n');
 };
 
 let toastTimer = 0;
@@ -335,11 +479,6 @@ function toast(msg: string): void {
 setSegmented('mode', 'mode', modeChoice);
 setSegmented('colormode', 'color', colorMode);
 $('filament').hidden = true;
-if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-  speedInput.value = '80';
-  applySpeed();
-}
-const first = DEMOS[0];
-const firstCanvas = renderDemo(first);
-loadSource(firstCanvas, firstCanvas.width, firstCanvas.height);
-setActiveSample(first.id);
+if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) setSpeed(100);
+previewPrinter(selected);
+showStep();
