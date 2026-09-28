@@ -1,12 +1,11 @@
 import './style.css';
 import { analyzeImage, type Analysis, type Mode, type RGB } from './analyze';
-import { DEMOS, renderDemo, type Demo } from './demos';
 import { GcodeWriter } from './gcode';
 import { buildModel, DEFAULT_MODEL_OPTIONS, type Model } from './model';
 import { loadMeshFile, meshExtension } from './meshLoad';
 import { buildMeshModel, meshBounds, type MeshData } from './meshModel';
 import { drawMeshPreview } from './meshPreview';
-import { MESH_SAMPLES, sampleMesh } from './meshSamples';
+import { MESH_SAMPLES, sampleMesh, type MeshSample } from './meshSamples';
 import { PRINTERS, printerById, type ControlAction, type PrinterSpec } from './printers';
 import { diagnostics, quality, rememberSafeMode, reloadInSafeMode } from './printers/quality';
 import { PrinterScene, type PrintStatus } from './scene';
@@ -62,8 +61,6 @@ let analysisCanvas: HTMLCanvasElement | null = null;
 let meshData: MeshData | null = null;
 let upAxis: 'z' | 'y' = 'z';
 let modeChoice: Mode | 'auto' = 'auto';
-/** True while the build mode was chosen by a sample rather than by the user. */
-let modeFromSample = false;
 let colorMode: 'photo' | 'filament' = 'photo';
 let gcode = new GcodeWriter(DEFAULT_SLICE_OPTIONS.lineWidth, DEFAULT_SLICE_OPTIONS.layerHeight);
 let gcodeLines: string[] = [];
@@ -137,7 +134,7 @@ $('continue').addEventListener('click', () => {
   $('cur-printer').textContent = selected.name;
   scene.showcase(false);
   showStep();
-  loadDemo(DEMOS[0]);
+  loadSample(MESH_SAMPLES[0]);
 });
 
 $('change').addEventListener('click', () => {
@@ -213,7 +210,6 @@ $('mode').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest('button');
   if (!b?.dataset.mode) return;
   modeChoice = b.dataset.mode as Mode | 'auto';
-  modeFromSample = false;
   setSegmented('mode', 'mode', modeChoice);
   scheduleRebuild();
 });
@@ -365,8 +361,7 @@ async function loadFile(file: File): Promise<void> {
   try {
     const bmp = await createImageBitmap(file);
     setMode('auto');
-    modeFromSample = false;
-    loadSource(bmp, bmp.width, bmp.height, file.name.replace(/\.[^.]+$/, ''));
+      loadSource(bmp, bmp.width, bmp.height, file.name.replace(/\.[^.]+$/, ''));
     bmp.close();
     setActiveSample(null);
   } catch {
@@ -394,21 +389,6 @@ function loadSource(src: CanvasImageSource, w: number, h: number, name: string, 
 }
 
 const samples = $('samples');
-for (const demo of DEMOS) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'sample';
-  b.dataset.demo = demo.id;
-  b.setAttribute('role', 'radio');
-  const img = document.createElement('img');
-  img.src = renderDemo(demo, 120).toDataURL();
-  img.alt = '';
-  const label = document.createElement('span');
-  label.textContent = demo.label;
-  b.append(img, label);
-  b.addEventListener('click', () => loadDemo(demo));
-  samples.appendChild(b);
-}
 for (const ms of MESH_SAMPLES) {
   const b = document.createElement('button');
   b.type = 'button';
@@ -423,14 +403,8 @@ for (const ms of MESH_SAMPLES) {
   img.alt = '';
   const label = document.createElement('span');
   label.textContent = ms.label;
-  const badge = document.createElement('i');
-  badge.className = 'badge';
-  badge.textContent = '3D';
-  b.append(img, label, badge);
-  b.addEventListener('click', () => {
-    loadMesh(sampleMesh(ms));
-    setActiveSample(ms.id);
-  });
+  b.append(img, label);
+  b.addEventListener('click', () => loadSample(ms));
   samples.appendChild(b);
 }
 
@@ -452,7 +426,8 @@ function loadMesh(mesh: MeshData): void {
   // Start at the file's real size (treated as mm) when it fits, otherwise the largest that does.
   const b = meshBounds(mesh.positions, upAxis);
   const size = $<HTMLInputElement>('size');
-  const longest = Math.max(b.x, b.y, b.z);
+  // Built-in samples load at least 8 cm long so small ones (the pawn) read well on the bed.
+  const longest = Math.max(b.x, b.y, b.z, mesh.format === 'Sample' ? 80 : 0);
   size.value = String(Math.round(Math.min(Number(size.max), Math.max(Number(size.min), longest))));
   size.dispatchEvent(new Event('input'));
   window.clearTimeout(rebuildTimer);
@@ -480,12 +455,9 @@ function busy(msg: string | null): void {
   if (msg) $('busy').textContent = msg;
 }
 
-function loadDemo(demo: Demo): void {
-  setMode(demo.mode ?? 'auto');
-  modeFromSample = !!demo.mode;
-  const cv = renderDemo(demo);
-  loadSource(cv, cv.width, cv.height, demo.id, demo.mode === 'relief');
-  setActiveSample(demo.id);
+function loadSample(ms: MeshSample): void {
+  loadMesh(sampleMesh(ms));
+  setActiveSample(ms.id);
 }
 
 function setMode(mode: Mode | 'auto'): void {
@@ -586,7 +558,7 @@ function rebuild(): void {
     const a = analysis as Analysis;
     const mode: Mode = modeChoice === 'auto' ? a.suggestedMode : modeChoice;
     $('r-shape').textContent =
-      modeChoice === 'auto' ? MODE_TEXT[mode] : modeFromSample ? 'Scenic photo: relief plaque' : `${mode[0].toUpperCase()}${mode.slice(1)} (your pick)`;
+      modeChoice === 'auto' ? MODE_TEXT[mode] : `${mode[0].toUpperCase()}${mode.slice(1)} (your pick)`;
     model = buildModel(a, { ...DEFAULT_MODEL_OPTIONS, mode, sizeMm, maxFootprintMm: selected.maxFootprint });
   }
   const hexColor = $<HTMLInputElement>('filament').value;

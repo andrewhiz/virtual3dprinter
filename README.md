@@ -43,12 +43,12 @@ It's a toy: nothing gets exported or printed. It's just fun to watch.
 parsed in the browser with Three.js' MIT-licensed loaders and never leave the device, so there is
 no server cost. Each layer is cut from the mesh with an even-odd scanline fill (`src/meshModel.ts`)
 and then sliced exactly like photo models. OBJ is assumed Y-up and the others Z-up; there's a
-toggle if a model comes in lying down. Three procedural 3D samples (twisted vase, spur gear, hex
-pencil cup) show the path without a file.
+toggle if a model comes in lying down. Overlapping parts in a file (a handle through a wall) merge into one solid.
 
-Step two opens with a sample already printing. There are six built-in samples: vase, boxy SUV,
-rocket, chess pawn, rubber duck and a mountain postcard. Between them they show all three build
-modes. Uploading your own photo is marked beta because the cut-out detection is still simple.
+Step two opens with a sample already printing. The nine built-in samples are generated 3D
+models (`src/meshSamples.ts`): vase, boxy SUV, rocket, chess pawn, rubber duck, coffee mug, twisted
+vase, spur gear and hex pencil cup. Photo upload is still there, marked beta, because outline
+detection from a single photo is rough.
 
 Colours come from the photo by default, or you can pick a single filament colour.
 

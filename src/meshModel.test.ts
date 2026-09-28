@@ -59,6 +59,48 @@ describe('buildMeshModel', () => {
     expect(m.field(34, 0, 50)).toBeGreaterThan(0); // wall
   });
 
+  it('builds every sample with outward-facing triangles (positive volume)', () => {
+    for (const sm of MESH_SAMPLES) {
+      const p = sm.build();
+      let vol = 0;
+      for (let i = 0; i < p.length; i += 9) {
+        const [ax, ay, az, bx, by, bz, cx, cy, cz] = p.subarray(i, i + 9);
+        vol += (ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx)) / 6;
+      }
+      expect(vol, sm.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('merges overlapping parts and keeps cavities hollow', () => {
+    const get = (id: string) => {
+      const sm = MESH_SAMPLES.find((x) => x.id === id);
+      if (!sm) throw new Error(`${id} sample missing`);
+      return sm;
+    };
+    // Mug: open cavity, solid wall, and the handle joined where it meets the wall.
+    const native = (m: MeshData) => {
+      const b = meshBounds(m.positions, 'z');
+      return { ...opts, sizeMm: Math.max(b.x, b.y, b.z), maxFootprintMm: 500, maxHeightMm: 500 };
+    };
+    const mugMesh = sampleMesh(get('mug'));
+    const mug = buildMeshModel(mugMesh, native(mugMesh));
+    const mx = (mug.sizeX - 2 * 36) / 2; // model is centred on its bounding box, which includes the handle
+    expect(mug.field(-mx, 0, 50)).toBeLessThan(0); // inside the cup
+    expect(mug.field(-mx + 34, 0, 50)).toBeGreaterThan(0); // wall
+    // The handle is solid all the way round, including where it runs diagonally.
+    for (const z of [30, 46, 62]) {
+      const core = 40 + 22 * Math.cos(Math.asin((z - 46) / 22));
+      expect(mug.field(-mx + core, 0, z), `handle at z=${z}`).toBeGreaterThan(0);
+    }
+    // Duck: the head overlaps the body; the overlap must be solid, not a hole.
+    const duckMesh = sampleMesh(get('duck'));
+    const duck = buildMeshModel(duckMesh, native(duckMesh));
+    // The model is centred on its bounding box; the tail's far end (x = -35) maps to -sizeX / 2.
+    // Head (centre x 16, z 42 before sitting on the bed) overlaps the body around x 10.
+    const toBed = (x: number) => x + 35 - duck.sizeX / 2;
+    expect(duck.field(toBed(10), 0, 32 + 1)).toBeGreaterThan(0);
+  });
+
   it('builds every 3D sample into a sliceable model', () => {
     for (const s of MESH_SAMPLES) {
       const m = buildMeshModel(sampleMesh(s), { ...opts, sizeMm: 80 });

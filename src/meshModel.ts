@@ -1,7 +1,9 @@
 // Turns a triangle mesh (STL / OBJ / 3MF / PLY) into a sliceable field model.
-// Each layer is cut with a horizontal plane, the cross-section is filled with an even-odd
-// scanline rule (robust to inconsistent winding), and a 2D signed distance field is computed
-// so the slicer can inset walls exactly as it does for photo models.
+// Each layer is cut with a horizontal plane and the cross-section is filled along scanlines.
+// Filling uses the non-zero winding rule from each triangle's facing, so overlapping parts
+// (a handle through a mug wall) merge into one solid; rows whose winding doesn't balance
+// (inconsistently oriented files) fall back to even-odd. A 2D signed distance field then lets
+// the slicer inset walls exactly as it does for photo models.
 
 import { signedDistance, type RGB } from './analyze';
 import type { Model } from './model';
@@ -78,6 +80,18 @@ export function buildMeshModel(mesh: MeshData, o: MeshModelOptions): Model {
   }
   const sizeX = ext[0] * s, sizeY = ext[1] * s, sizeZ = ext[2] * s;
 
+  // Which way each triangle faces along +x: entering the solid (+1), leaving (-1), or edge-on /
+  // degenerate (0, counts for even-odd only).
+  const triDir = new Int8Array(n);
+  for (let t = 0; t < n; t++) {
+    const o = t * 9;
+    const ux = pos[o + 3] - pos[o], uy = pos[o + 4] - pos[o + 1], uz = pos[o + 5] - pos[o + 2];
+    const vx = pos[o + 6] - pos[o], vy = pos[o + 7] - pos[o + 1], vz = pos[o + 8] - pos[o + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz);
+    triDir[t] = len < 1e-12 || Math.abs(nx) < len * 1e-6 ? 0 : nx < 0 ? 1 : -1;
+  }
+
   // Bucket triangles by height so each layer only looks at the ones it can cut.
   const bins = Math.max(32, Math.min(2048, Math.ceil(n / 40)));
   const binOf = (z: number) => Math.min(bins - 1, Math.max(0, Math.floor((z / (sizeZ || 1)) * bins)));
@@ -112,7 +126,8 @@ export function buildMeshModel(mesh: MeshData, o: MeshModelOptions): Model {
     const b = binOf(z);
     const pts: number[] = [];
     for (let k = counts[b]; k < counts[b + 1]; k++) {
-      const t = binTris[k] * 9;
+      const tri = binTris[k];
+      const t = tri * 9;
       pts.length = 0;
       for (let e = 0; e < 3; e++) {
         const a = t + e * 3, d = t + ((e + 1) % 3) * 3;
@@ -130,16 +145,30 @@ export function buildMeshModel(mesh: MeshData, o: MeshModelOptions): Model {
       for (let j = j0; j <= j1; j++) {
         const yc = oy + (j + 0.5) * c;
         if (yc < ylo || yc >= yhi) continue;
-        rows[j].push(x1 + ((yc - y1) / (y2 - y1)) * (x2 - x1));
+        rows[j].push(x1 + ((yc - y1) / (y2 - y1)) * (x2 - x1), triDir[tri]);
       }
     }
+    const order: number[] = [];
     for (let j = 0; j < gh; j++) {
-      const xs = rows[j];
-      if (xs.length < 2) continue;
-      xs.sort((p, q) => p - q);
-      for (let k = 0; k + 1 < xs.length; k += 2) {
-        const i0 = Math.max(0, Math.ceil((xs[k] - ox) / c - 0.5));
-        const i1 = Math.min(gw - 1, Math.floor((xs[k + 1] - ox) / c - 0.5));
+      const row = rows[j];
+      const m = row.length / 2;
+      if (m < 2) continue;
+      order.length = 0;
+      let net = 0;
+      for (let k = 0; k < m; k++) {
+        order.push(k);
+        net += row[k * 2 + 1];
+      }
+      order.sort((p, q) => row[p * 2] - row[q * 2]);
+      // A closed, consistently oriented mesh always returns to zero winding along a row.
+      const nonZero = net === 0;
+      let w = 0, parity = 0;
+      for (let k = 0; k + 1 < m; k++) {
+        w += row[order[k] * 2 + 1];
+        parity ^= 1;
+        if (!(nonZero ? w !== 0 : parity === 1)) continue;
+        const i0 = Math.max(0, Math.ceil((row[order[k] * 2] - ox) / c - 0.5));
+        const i1 = Math.min(gw - 1, Math.floor((row[order[k + 1] * 2] - ox) / c - 0.5));
         for (let i = i0; i <= i1; i++) mask[j * gw + i] = 1;
       }
     }
