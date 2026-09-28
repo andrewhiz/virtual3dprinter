@@ -8,6 +8,7 @@ import { buildMeshModel, meshBounds, type MeshData } from './meshModel';
 import { drawMeshPreview } from './meshPreview';
 import { MESH_SAMPLES, sampleMesh } from './meshSamples';
 import { PRINTERS, printerById, type ControlAction, type PrinterSpec } from './printers';
+import { diagnostics, quality, rememberSafeMode, reloadInSafeMode } from './printers/quality';
 import { PrinterScene, type PrintStatus } from './scene';
 import { DEFAULT_SLICE_OPTIONS, slice, type SliceResult } from './slicer';
 
@@ -20,28 +21,38 @@ const PRINTER_KEY = 'v3dp.printer';
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 // Surface unexpected errors instead of leaving a half-built page.
-window.addEventListener('error', (e) => toast(`Something went wrong: ${e.message}`));
-window.addEventListener('unhandledrejection', (e) => toast(`Something went wrong: ${String((e.reason as Error)?.message ?? e.reason)}`));
+// Only report errors from our own bundle; browsers like Dolphin inject scripts whose errors
+// would otherwise show up here.
+const ours = (where: string | undefined) => !!where && /\/assets\/[^/]+\.js/.test(where);
+window.addEventListener('error', (e) => {
+  if (ours(e.filename) || ours((e.error as Error | undefined)?.stack)) toast(`Something went wrong: ${e.message}`);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const err = e.reason as Error | undefined;
+  if (ours(err?.stack)) toast(`Something went wrong: ${String(err?.message ?? e.reason)}`);
+});
 
 const scene = new PrinterScene($('viewport'));
 if (scene.failure) {
   $('gl-error').hidden = false;
-  $('gl-error-detail').textContent = scene.failure;
+  $('gl-error-detail').textContent = `${scene.failure}\n${diagnostics()}`;
   $('fullview').hidden = true;
 }
-scene.onContextLost = () => ($('gl-lost').hidden = false);
+scene.onContextLost = () => {
+  // A lost context usually means the GPU driver hit trouble; start the next attempt in safe mode.
+  rememberSafeMode();
+  $('gl-lost').hidden = false;
+  $('gl-lost-detail').textContent = diagnostics();
+};
 scene.onContextRestored = () => {
   $('gl-lost').hidden = true;
   scene.setPrinter(selected);
   scene.showcase(step === 'pick');
   if (step === 'work') rebuild();
 };
-$('gl-restore').addEventListener('click', () => {
-  scene.restoreContext();
-  window.setTimeout(() => {
-    if (!$('gl-lost').hidden) location.reload();
-  }, 2500);
-});
+$('gl-restore').addEventListener('click', reloadInSafeMode);
+$('gl-safe').addEventListener('click', reloadInSafeMode);
+$('gl-safe').hidden = quality.safe;
 
 let step: 'pick' | 'work' = 'pick';
 let selected: PrinterSpec = printerById(readStored()) ?? PRINTERS[0];

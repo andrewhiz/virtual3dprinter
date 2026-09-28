@@ -85,14 +85,14 @@ export class PrinterScene {
 
   constructor(private container: HTMLElement) {
     try {
-      this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      this.renderer = new THREE.WebGLRenderer({ antialias: !quality.lowPower });
     } catch (err) {
       (this as { failure: string | null }).failure = err instanceof Error ? err.message : String(err);
       return;
     }
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.lowPower ? 1.5 : 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.safe ? 1 : quality.lowPower ? 1.5 : 2));
+    this.renderer.shadowMap.enabled = !quality.safe;
+    this.renderer.shadowMap.type = quality.lowPower ? THREE.BasicShadowMap : THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
@@ -104,10 +104,13 @@ export class PrinterScene {
     });
     this.renderer.domElement.addEventListener('webglcontextrestored', () => this.onContextRestored());
 
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.55;
-    pmrem.dispose();
+    // The reflection-map pass renders to half-float cube targets, which some mobile drivers crash on.
+    if (!quality.lowPower) {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      this.scene.environmentIntensity = 0.55;
+      pmrem.dispose();
+    }
 
     this.camera = new THREE.PerspectiveCamera(36, 1, 1, 6000);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -132,7 +135,7 @@ export class PrinterScene {
   }
 
   private buildWorkshop(): void {
-    this.scene.add(new THREE.HemisphereLight(0xe4ecff, 0x3a2c20, 0.7));
+    this.scene.add(new THREE.HemisphereLight(0xe4ecff, 0x3a2c20, quality.lowPower ? 1.6 : 0.7));
     const sun = new THREE.DirectionalLight(0xffffff, 2.4);
     sun.position.set(520, 1300, 760);
     sun.target.position.set(0, 200, 0);

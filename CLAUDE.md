@@ -9,7 +9,9 @@ A fun side project: turn a product photo into an animated virtual 3D print. Visu
 - 3D files: `meshLoad.ts` (Three.js loaders, lazy) -> `meshModel.ts` (per-layer even-odd fill + SDF) -> slicer.
   `meshSamples.ts` generates the built-in 3D samples; `meshPreview.ts` draws thumbnails.
 - `analyze`, `model`, `meshModel`, `slicer`, `gcode` are pure and DOM-free; keep them that way so tests run in Node.
-- Phones: `printers/quality.ts` lowPower drops real-time lights and shadow size. The scene must survive
+- Phones: `printers/quality.ts` lowPower skips PMREM, MSAA, PCF shadows, extra lights and physical
+  materials (new mobile GPU drivers crash on them and Chrome then blocks WebGL for the site).
+  After a context loss the tab reloads in `safe` mode (also `?safe`): no shadows, 1x pixel ratio. The scene must survive
   WebGL failure (`scene.failure`) and context loss; never let a renderer error take down the UI.
 - Printer-space coordinates are mm, z up, bed centred at 0. The Three.js root group rotates z-up to y-up.
 - Filament is one InstancedMesh; only upload the instance ranges that change per frame.

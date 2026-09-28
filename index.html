@@ -167,13 +167,15 @@
 
         <div class="notice" id="gl-error" hidden>
           <strong>The 3D view couldn't start</strong>
-          <span>Your browser didn't give this page WebGL, which draws the printer. Turn on hardware acceleration or try another browser (Chrome, Safari, Firefox). You can still browse the printers and settings.</span>
+          <span>Your browser refused 3D graphics (WebGL) for this site. After a graphics error, Chrome pauses 3D for a site until it restarts: close Chrome completely, reopen it, and try safe mode. You can still browse the printers and settings.</span>
+          <button type="button" id="gl-safe" class="cta">Try safe mode</button>
           <code id="gl-error-detail"></code>
         </div>
         <div class="notice" id="gl-lost" hidden>
-          <strong>The 3D view was paused</strong>
-          <span>Your browser freed its graphics memory. Your settings are kept.</span>
-          <button type="button" id="gl-restore" class="cta">Reload 3D view</button>
+          <strong>The 3D view stopped</strong>
+          <span>Your phone's graphics driver dropped the 3D view. Reloading switches to safe mode, which uses simpler lighting.</span>
+          <button type="button" id="gl-restore" class="cta">Reload in safe mode</button>
+          <code id="gl-lost-detail"></code>
         </div>
 
         <div class="toast" id="toast" hidden></div>

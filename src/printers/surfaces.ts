@@ -1,8 +1,12 @@
 // Procedural textures for build plates and the workbench.
 
 import * as THREE from 'three';
+import { quality } from './quality';
 
 export function bedSurface(kind: 'pei' | 'glass' | 'carbon'): THREE.Material {
+  if (kind === 'glass' && quality.lowPower) {
+    return new THREE.MeshStandardMaterial({ color: 0x9fb4c2, roughness: 0.1, transparent: true, opacity: 0.35 });
+  }
   if (kind === 'glass') {
     return new THREE.MeshPhysicalMaterial({
       color: 0x9fb4c2,
