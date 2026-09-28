@@ -6,7 +6,11 @@ A fun side project: turn a product photo into an animated virtual 3D print. Visu
   -> `slicer.ts` (field -> layered moves) -> `scene.ts` (workshop, animation, button picking).
   `printers/` holds one file per machine (`slinger`, `corexy`, `delta`) built from shared `parts.ts`
   and `panel.ts`; each exports a `PrinterSpec` whose `build()` returns a `PrinterRig`. `main.ts` wires the UI.
-- `analyze`, `model`, `slicer`, `gcode` are pure and DOM-free; keep them that way so tests run in Node.
+- 3D files: `meshLoad.ts` (Three.js loaders, lazy) -> `meshModel.ts` (per-layer even-odd fill + SDF) -> slicer.
+  `meshSamples.ts` generates the built-in 3D samples; `meshPreview.ts` draws thumbnails.
+- `analyze`, `model`, `meshModel`, `slicer`, `gcode` are pure and DOM-free; keep them that way so tests run in Node.
+- Phones: `printers/quality.ts` lowPower drops real-time lights and shadow size. The scene must survive
+  WebGL failure (`scene.failure`) and context loss; never let a renderer error take down the UI.
 - Printer-space coordinates are mm, z up, bed centred at 0. The Three.js root group rotates z-up to y-up.
 - Filament is one InstancedMesh; only upload the instance ranges that change per frame.
 - Commands: `npm run dev`, `npm test`, `npm run typecheck`, `npm run build`, `npm run deploy`.

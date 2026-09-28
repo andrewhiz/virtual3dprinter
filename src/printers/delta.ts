@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { buildPanel } from './panel';
+import { quality } from './quality';
 import { alignRod, disposeTree, Kit, setGlow, spinFans } from './parts';
 import { feedLine, setFeed } from './slinger';
 import { bedSurface } from './surfaces';
@@ -114,7 +115,7 @@ function build(): PrinterRig {
   root.add(ring);
   const ringLight = new THREE.PointLight(0xe6f0ff, 70000, 1200, 1.6);
   ringLight.position.set(0, -40, 790);
-  root.add(ringLight);
+  if (!quality.lowPower) root.add(ringLight);
 
   // Spool on top, Bowden extruder on the top plate.
   kit.box(14, 14, 60, [0, 60, 896], m.frame, root);

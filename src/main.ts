@@ -2,7 +2,11 @@ import './style.css';
 import { analyzeImage, type Analysis, type Mode, type RGB } from './analyze';
 import { DEMOS, renderDemo, type Demo } from './demos';
 import { GcodeWriter } from './gcode';
-import { buildModel, DEFAULT_MODEL_OPTIONS } from './model';
+import { buildModel, DEFAULT_MODEL_OPTIONS, type Model } from './model';
+import { loadMeshFile, meshExtension } from './meshLoad';
+import { buildMeshModel, meshBounds, type MeshData } from './meshModel';
+import { drawMeshPreview } from './meshPreview';
+import { MESH_SAMPLES, sampleMesh } from './meshSamples';
 import { PRINTERS, printerById, type ControlAction, type PrinterSpec } from './printers';
 import { PrinterScene, type PrintStatus } from './scene';
 import { DEFAULT_SLICE_OPTIONS, slice, type SliceResult } from './slicer';
@@ -15,12 +19,37 @@ const PRINTER_KEY = 'v3dp.printer';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+// Surface unexpected errors instead of leaving a half-built page.
+window.addEventListener('error', (e) => toast(`Something went wrong: ${e.message}`));
+window.addEventListener('unhandledrejection', (e) => toast(`Something went wrong: ${String((e.reason as Error)?.message ?? e.reason)}`));
+
 const scene = new PrinterScene($('viewport'));
+if (scene.failure) {
+  $('gl-error').hidden = false;
+  $('gl-error-detail').textContent = scene.failure;
+  $('fullview').hidden = true;
+}
+scene.onContextLost = () => ($('gl-lost').hidden = false);
+scene.onContextRestored = () => {
+  $('gl-lost').hidden = true;
+  scene.setPrinter(selected);
+  scene.showcase(step === 'pick');
+  if (step === 'work') rebuild();
+};
+$('gl-restore').addEventListener('click', () => {
+  scene.restoreContext();
+  window.setTimeout(() => {
+    if (!$('gl-lost').hidden) location.reload();
+  }, 2500);
+});
 
 let step: 'pick' | 'work' = 'pick';
 let selected: PrinterSpec = printerById(readStored()) ?? PRINTERS[0];
 let analysis: Analysis | null = null;
 let analysisCanvas: HTMLCanvasElement | null = null;
+/** A 3D model file or 3D sample; when set it replaces the photo pipeline. */
+let meshData: MeshData | null = null;
+let upAxis: 'z' | 'y' = 'z';
 let modeChoice: Mode | 'auto' = 'auto';
 /** True while the build mode was chosen by a sample rather than by the user. */
 let modeFromSample = false;
@@ -112,9 +141,10 @@ function showStep(): void {
   document.body.dataset.step = step;
   $('pick').hidden = !pick;
   $('work').hidden = pick;
-  $('transport').hidden = pick;
-  $('gcode').hidden = pick;
-  $('hud').hidden = pick;
+  const noView = !!scene.failure;
+  $('transport').hidden = pick || noView;
+  $('gcode').hidden = pick || noView;
+  $('hud').hidden = pick || noView;
   $('step-1').classList.toggle('on', pick);
   $('step-2').classList.toggle('on', !pick);
   $('step-1').setAttribute('aria-current', pick ? 'step' : 'false');
@@ -127,6 +157,7 @@ function showStep(): void {
 function resetSession(): void {
   analysis = null;
   analysisCanvas = null;
+  meshData = null;
   scene.clearPrint();
   setActiveSample(null);
   const cv = $<HTMLCanvasElement>('preview');
@@ -138,8 +169,22 @@ function resetSession(): void {
 }
 
 function syncEmpty(): void {
-  $('empty').hidden = !(step === 'work' && !scene.hasPrint);
+  $('empty').hidden = !(step === 'work' && !scene.hasPrint && !scene.failure);
 }
+
+// ---------- Full view ----------
+
+function setFullView(on: boolean): void {
+  document.body.classList.toggle('immersive', on);
+  $('fullview').hidden = on;
+  $('closefull').hidden = !on;
+  if (!on) $('fullview').focus();
+}
+$('fullview').addEventListener('click', () => setFullView(true));
+$('closefull').addEventListener('click', () => setFullView(false));
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.body.classList.contains('immersive')) setFullView(false);
+});
 
 // ---------- Step 2: inputs ----------
 
@@ -186,6 +231,15 @@ for (const [id, out, fmt] of sliders) {
   });
 }
 $('filament').addEventListener('input', scheduleRebuild);
+
+$('upaxis').addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest('button');
+  if (!b?.dataset.axis) return;
+  upAxis = b.dataset.axis as 'z' | 'y';
+  setSegmented('upaxis', 'axis', upAxis);
+  if (meshData) drawMeshReadout(meshData);
+  scheduleRebuild();
+});
 
 const speedInput = $<HTMLInputElement>('speed');
 function setSpeed(v: number): void {
@@ -281,8 +335,20 @@ window.addEventListener('paste', (e) => {
 });
 
 async function loadFile(file: File): Promise<void> {
+  if (meshExtension(file.name)) {
+    busy(`Reading ${file.name}…`);
+    try {
+      const mesh = await loadMeshFile(file);
+      setActiveSample(null);
+      loadMesh(mesh);
+    } catch (err) {
+      busy(null);
+      toast(err instanceof Error ? err.message : `Couldn't read ${file.name}.`);
+    }
+    return;
+  }
   if (!file.type.startsWith('image/')) {
-    toast(`${file.name} isn't an image. Try a PNG, JPG or WebP.`);
+    toast(`${file.name} isn't a supported file. Use STL, OBJ, 3MF, PLY or a PNG/JPG photo.`);
     return;
   }
   try {
@@ -308,6 +374,8 @@ function loadSource(src: CanvasImageSource, w: number, h: number, name: string, 
   const g = cv.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
   g.drawImage(src, 0, 0, cw, ch);
   analysisCanvas = cv;
+  meshData = null;
+  setSource('photo');
   analysis = analyzeImage(g.getImageData(0, 0, cw, ch), { wholeImage });
   sourceName = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24) || 'model';
   drawPreview();
@@ -329,6 +397,76 @@ for (const demo of DEMOS) {
   b.append(img, label);
   b.addEventListener('click', () => loadDemo(demo));
   samples.appendChild(b);
+}
+for (const ms of MESH_SAMPLES) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'sample';
+  b.dataset.demo = ms.id;
+  b.setAttribute('role', 'radio');
+  const thumb = document.createElement('canvas');
+  thumb.width = thumb.height = 120;
+  drawMeshPreview(thumb, ms.build(), 'z', ms.color, '#f0f1f3');
+  const img = document.createElement('img');
+  img.src = thumb.toDataURL();
+  img.alt = '';
+  const label = document.createElement('span');
+  label.textContent = ms.label;
+  const badge = document.createElement('i');
+  badge.className = 'badge';
+  badge.textContent = '3D';
+  b.append(img, label, badge);
+  b.addEventListener('click', () => {
+    loadMesh(sampleMesh(ms));
+    setActiveSample(ms.id);
+  });
+  samples.appendChild(b);
+}
+
+function setSource(kind: 'photo' | 'mesh'): void {
+  document.body.dataset.source = kind;
+  $('r-sym-label').textContent = kind === 'mesh' ? 'Triangles' : 'Symmetry';
+  $('r-method-label').textContent = kind === 'mesh' ? 'Printed size' : 'Cut-out';
+  $('size-label').textContent = kind === 'mesh' ? 'Longest side' : 'Size';
+}
+
+function loadMesh(mesh: MeshData): void {
+  meshData = mesh;
+  analysis = null;
+  analysisCanvas = null;
+  setSource('mesh');
+  upAxis = mesh.upAxis;
+  setSegmented('upaxis', 'axis', upAxis);
+  sourceName = mesh.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24) || 'model';
+  // Start at the file's real size (treated as mm) when it fits, otherwise the largest that does.
+  const b = meshBounds(mesh.positions, upAxis);
+  const size = $<HTMLInputElement>('size');
+  const longest = Math.max(b.x, b.y, b.z);
+  size.value = String(Math.round(Math.min(Number(size.max), Math.max(Number(size.min), longest))));
+  size.dispatchEvent(new Event('input'));
+  window.clearTimeout(rebuildTimer);
+  drawMeshReadout(mesh);
+  busy('Slicing…');
+  window.setTimeout(rebuild, 30);
+}
+
+function meshColor(mesh: MeshData): RGB {
+  return mesh.color ?? selected.accent.match(/[0-9a-f]{2}/gi)!.map((h) => parseInt(h, 16)) as RGB;
+}
+
+function drawMeshReadout(mesh: MeshData): void {
+  const color = meshColor(mesh);
+  drawMeshPreview($<HTMLCanvasElement>('preview'), mesh.positions, upAxis, color);
+  $('r-shape').textContent = mesh.format === 'Sample' ? '3D model sample' : `3D model (${mesh.format})`;
+  $('r-sym').textContent = (mesh.positions.length / 9).toLocaleString();
+  $('r-swatch').style.background = hex(color);
+  $('r-color').textContent = mesh.color ? hex(color).toUpperCase() : `${hex(color).toUpperCase()} (default)`;
+  if (colorMode === 'photo') $<HTMLInputElement>('filament').value = hex(color);
+}
+
+function busy(msg: string | null): void {
+  $('busy').hidden = msg === null;
+  if (msg) $('busy').textContent = msg;
 }
 
 function loadDemo(demo: Demo): void {
@@ -415,17 +553,31 @@ function scheduleRebuild(): void {
 }
 
 function rebuild(): void {
-  if (!analysis || step !== 'work') return;
-  const mode: Mode = modeChoice === 'auto' ? analysis.suggestedMode : modeChoice;
-  $('r-shape').textContent =
-    modeChoice === 'auto' ? MODE_TEXT[mode] : modeFromSample ? 'Scenic photo: relief plaque' : `${mode[0].toUpperCase()}${mode.slice(1)} (your pick)`;
-
-  const model = buildModel(analysis, {
-    ...DEFAULT_MODEL_OPTIONS,
-    mode,
-    sizeMm: Number($<HTMLInputElement>('size').value),
-    maxFootprintMm: selected.maxFootprint,
-  });
+  busy(null);
+  if ((!analysis && !meshData) || step !== 'work') return;
+  const sizeMm = Number($<HTMLInputElement>('size').value);
+  let model: Model;
+  if (meshData) {
+    try {
+      model = buildMeshModel(meshData, {
+        sizeMm,
+        maxFootprintMm: selected.maxFootprint,
+        maxHeightMm: selected.maxHeight,
+        upAxis,
+        color: meshColor(meshData),
+      });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'That model could not be sliced.');
+      return;
+    }
+    $('r-method').textContent = `${model.sizeX.toFixed(0)} × ${model.sizeY.toFixed(0)} × ${model.sizeZ.toFixed(0)} mm`;
+  } else {
+    const a = analysis as Analysis;
+    const mode: Mode = modeChoice === 'auto' ? a.suggestedMode : modeChoice;
+    $('r-shape').textContent =
+      modeChoice === 'auto' ? MODE_TEXT[mode] : modeFromSample ? 'Scenic photo: relief plaque' : `${mode[0].toUpperCase()}${mode.slice(1)} (your pick)`;
+    model = buildModel(a, { ...DEFAULT_MODEL_OPTIONS, mode, sizeMm, maxFootprintMm: selected.maxFootprint });
+  }
   const hexColor = $<HTMLInputElement>('filament').value;
   const filamentColor: RGB = [1, 3, 5].map((i) => parseInt(hexColor.slice(i, i + 2), 16)) as RGB;
   const opts = {
@@ -507,6 +659,8 @@ function toast(msg: string): void {
 
 setSegmented('mode', 'mode', modeChoice);
 setSegmented('colormode', 'color', colorMode);
+setSegmented('upaxis', 'axis', upAxis);
+setSource('photo');
 $('filament').hidden = true;
 if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) setSpeed(100);
 previewPrinter(selected);

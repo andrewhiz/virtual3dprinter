@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { ControlAction, PanelState, PrinterRig, PrinterSpec } from './printers';
+import { quality } from './printers/quality';
 import { woodTexture } from './printers/surfaces';
 import { MoveKind, type Move, type SliceResult } from './slicer';
 
@@ -28,10 +29,10 @@ export interface PrintStatus {
 }
 
 export class PrinterScene {
-  private renderer: THREE.WebGLRenderer;
+  private renderer!: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
-  private camera: THREE.PerspectiveCamera;
-  private controls: OrbitControls;
+  private camera!: THREE.PerspectiveCamera;
+  private controls!: OrbitControls;
   private root = new THREE.Group();
   private timer = new THREE.Timer();
   private raycaster = new THREE.Raycaster();
@@ -64,6 +65,17 @@ export class PrinterScene {
   fileName = 'no_model.gcode';
   onStatus: (s: PrintStatus) => void = () => {};
   onControl: (a: ControlAction) => void = () => {};
+  onContextLost: () => void = () => {};
+  onContextRestored: () => void = () => {};
+
+  /** Ask the browser for the 3D context back after it was dropped. */
+  /** Set when the browser could not start WebGL; the scene then does nothing. */
+  readonly failure: string | null = null;
+
+  restoreContext(): void {
+    if (this.failure) return;
+    this.renderer.forceContextRestore();
+  }
 
   private tmpM = new THREE.Matrix4();
   private tmpQ = new THREE.Quaternion();
@@ -72,13 +84,25 @@ export class PrinterScene {
   private zAxis = new THREE.Vector3(0, 0, 1);
 
   constructor(private container: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    try {
+      this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    } catch (err) {
+      (this as { failure: string | null }).failure = err instanceof Error ? err.message : String(err);
+      return;
+    }
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.lowPower ? 1.5 : 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
+    // Browsers drop the WebGL context under memory pressure (common on phones); without this
+    // the canvas just stays black.
+    this.renderer.domElement.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      this.onContextLost();
+    });
+    this.renderer.domElement.addEventListener('webglcontextrestored', () => this.onContextRestored());
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -95,7 +119,7 @@ export class PrinterScene {
     this.controls.addEventListener('start', () => (this.userMoved = true));
 
     this.scene.background = new THREE.Color(0x15171a);
-    this.scene.fog = new THREE.Fog(0x15171a, 1800, 4200);
+    this.scene.fog = new THREE.Fog(0x15171a, 3200, 7000);
     this.buildWorkshop();
 
     this.root.rotation.x = -Math.PI / 2;
@@ -113,14 +137,16 @@ export class PrinterScene {
     sun.position.set(520, 1300, 760);
     sun.target.position.set(0, 200, 0);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.setScalar(quality.lowPower ? 1024 : 2048);
     Object.assign(sun.shadow.camera, { left: -700, right: 700, top: 800, bottom: -600, near: 100, far: 3200 });
     sun.shadow.bias = -0.0004;
     sun.shadow.normalBias = 0.6;
     this.scene.add(sun, sun.target);
-    const rim = new THREE.DirectionalLight(0x9fbcff, 0.7);
-    rim.position.set(-900, 500, -700);
-    this.scene.add(rim);
+    if (!quality.lowPower) {
+      const rim = new THREE.DirectionalLight(0x9fbcff, 0.7);
+      rim.position.set(-900, 500, -700);
+      this.scene.add(rim);
+    }
 
     const wood = woodTexture();
     const top = new THREE.Mesh(
@@ -148,6 +174,7 @@ export class PrinterScene {
   }
 
   private resize(): void {
+    if (this.failure) return;
     const w = this.container.clientWidth || 1;
     const h = this.container.clientHeight || 1;
     this.renderer.setSize(w, h, false);
@@ -163,6 +190,10 @@ export class PrinterScene {
   }
 
   setPrinter(spec: PrinterSpec): void {
+    if (this.failure) {
+      this.spec = spec;
+      return;
+    }
     this.clearPrint();
     if (this.rig) {
       this.root.remove(this.rig.root);
@@ -178,12 +209,13 @@ export class PrinterScene {
   }
 
   showcase(on: boolean): void {
+    if (this.failure) return;
     this.controls.autoRotate = on && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (!on) this.resetView();
   }
 
   resetView(): void {
-    if (!this.spec) return;
+    if (!this.spec || this.failure) return;
     this.userMoved = false;
     this.controls.target.set(...this.spec.camera.target);
     // Back the camera off on tall, narrow screens so the whole printer still fits.

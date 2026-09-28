@@ -39,6 +39,13 @@ It's a toy: nothing gets exported or printed. It's just fun to watch.
    kept in GPU memory, and switching printers clears the current print because bed size and
    speeds change the slice.
 
+**3D model files.** Upload STL, OBJ, 3MF or PLY (up to 80 MB and 3 million triangles). Files are
+parsed in the browser with Three.js' MIT-licensed loaders and never leave the device, so there is
+no server cost. Each layer is cut from the mesh with an even-odd scanline fill (`src/meshModel.ts`)
+and then sliced exactly like photo models. OBJ is assumed Y-up and the others Z-up; there's a
+toggle if a model comes in lying down. Three procedural 3D samples (twisted vase, spur gear, hex
+pencil cup) show the path without a file.
+
 Step two opens with a sample already printing. There are six built-in samples: vase, boxy SUV,
 rocket, chess pawn, rubber duck and a mountain postcard. Between them they show all three build
 modes. Uploading your own photo is marked beta because the cut-out detection is still simple.
@@ -56,7 +63,11 @@ npm run build        # static site in dist/
 npm run build:single # one self-contained HTML file in dist-single/
 ```
 
-Built with TypeScript, Vite, Three.js and Vitest. There is no backend, and the photo never leaves
+**Full view** hides the settings so the printer fills the browser window (Esc or Close to exit).
+On phones, and on screens without WebGL, the app lowers render cost, recovers if the browser drops
+the 3D context, and explains what happened instead of showing a black view.
+
+Built with TypeScript, Vite, Three.js and Vitest. There is no backend; photos and model files never leave
 the browser.
 
 ## Deploy (Cloudflare Workers)

@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import { buildPanel } from './panel';
+import { quality } from './quality';
 import { disposeTree, Kit, setGlow, spinFans } from './parts';
 import { feedLine, setFeed } from './slinger';
 import { bedSurface } from './surfaces';
@@ -120,7 +121,7 @@ function build(): PrinterRig {
   kit.box(360, 6, 4, [0, -S + 18, 520], ledBar, root);
   const chamberLight = new THREE.PointLight(0xfff1dc, 45000, 900, 1.6);
   chamberLight.position.set(0, -120, 500);
-  root.add(chamberLight);
+  if (!quality.lowPower) root.add(chamberLight);
 
   // Side-mounted spool feeding a PTFE tube through the roof.
   kit.box(60, 12, 12, [S + 45, 60, 420], m.frame, root);

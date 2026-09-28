@@ -2,6 +2,7 @@
 // hot ends, spools. Everything a Kit creates is disposed together with the printer.
 
 import * as THREE from 'three';
+import { quality } from './quality';
 
 type V3 = [number, number, number];
 type Axis = 'x' | 'y' | 'z';
@@ -216,7 +217,7 @@ export class Kit {
     parent.add(glow);
     const light = new THREE.PointLight(0xff7a2a, 0, 50, 1.6);
     light.position.set(0, -8, 5);
-    parent.add(light);
+    if (!quality.lowPower) parent.add(light);
     return { glow, light };
   }
 }

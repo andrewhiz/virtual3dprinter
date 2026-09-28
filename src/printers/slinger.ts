@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import { buildPanel } from './panel';
+import { quality } from './quality';
 import { bedSurface } from './surfaces';
 import { disposeTree, Kit, setGlow, spinFans } from './parts';
 import type { PrinterRig, PrinterSpec } from './types';
@@ -86,7 +87,7 @@ function build(): PrinterRig {
   const lamp = new THREE.SpotLight(0xfff1d6, 60000, 700, 0.9, 0.6, 1.8);
   lamp.position.set(0, 20, 318);
   lamp.target.position.set(0, -20, 0);
-  inner.add(lamp, lamp.target);
+  if (!quality.lowPower) inner.add(lamp, lamp.target);
 
   // Spool on top.
   kit.box(14, 14, 70, [0, 40, 385], m.frame, inner);
