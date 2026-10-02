@@ -121,6 +121,22 @@ describe('loadMeshFile', () => {
     expect(mesh.positions.length).toBe(18);
   });
 
+  it('drops triangles with non-finite coordinates', async () => {
+    // Binary STL: 80-byte header, triangle count, then per triangle a normal, 3 vertices, 2 spare bytes.
+    const binarySTL = (tris: number[][]) => {
+      const buf = new DataView(new ArrayBuffer(84 + tris.length * 50));
+      buf.setUint32(80, tris.length, true);
+      tris.forEach((t, i) => t.forEach((v, k) => buf.setFloat32(84 + i * 50 + 12 + k * 4, v, true)));
+      return buf.buffer;
+    };
+    const good = [0, 0, 0, 10, 0, 0, 0, 10, 0];
+    const nan = [NaN, 0, 0, 1, 1, 1, 2, 2, 2];
+    const inf = [0, Infinity, 0, 1, 1, 1, 2, 2, 2];
+    const mesh = await loadMeshFile(new File([binarySTL([good, nan, inf])], 'broken.stl'));
+    expect(Array.from(mesh.positions)).toEqual(good);
+    await expect(loadMeshFile(new File([binarySTL([nan])], 'all-bad.stl'))).rejects.toThrow(/no triangles/);
+  });
+
   it('rejects unsupported files with a clear message', async () => {
     await expect(loadMeshFile(new File(['x'], 'part.step'))).rejects.toThrow(/STL, OBJ, 3MF or PLY/);
   });

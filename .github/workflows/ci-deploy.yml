@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege: the workflow only reads the repo. Deploys authenticate with the Cloudflare token.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -15,16 +19,18 @@ jobs:
     name: Typecheck, test, build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          node-version: 22
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist
           path: dist
@@ -51,16 +57,18 @@ jobs:
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=Deploy skipped::Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets to deploy. See README > Deploy."
           fi
-      - uses: actions/checkout@v4
-        if: steps.secrets.outputs.ready == 'true'
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         if: steps.secrets.outputs.ready == 'true'
         with:
-          node-version: 22
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
         if: steps.secrets.outputs.ready == 'true'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         if: steps.secrets.outputs.ready == 'true'
         with:
           name: dist
@@ -68,7 +76,7 @@ jobs:
       - name: wrangler deploy
         id: deploy
         if: steps.secrets.outputs.ready == 'true'
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

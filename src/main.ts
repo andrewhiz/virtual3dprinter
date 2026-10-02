@@ -1,3 +1,13 @@
+// Fonts are bundled with the site (SIL OFL 1.1, Latin subset) so the page makes no third-party requests.
+import '@fontsource/chakra-petch/latin-500.css';
+import '@fontsource/chakra-petch/latin-600.css';
+import '@fontsource/chakra-petch/latin-700.css';
+import '@fontsource/ibm-plex-sans/latin-400.css';
+import '@fontsource/ibm-plex-sans/latin-500.css';
+import '@fontsource/ibm-plex-sans/latin-600.css';
+import '@fontsource/ibm-plex-mono/latin-400.css';
+import '@fontsource/ibm-plex-mono/latin-500.css';
+import '@fontsource/ibm-plex-mono/latin-600.css';
 import './style.css';
 import { analyzeImage, type Analysis, type Mode, type RGB } from './analyze';
 import { GcodeWriter } from './gcode';
@@ -16,6 +26,8 @@ const GCODE_LINES = 14;
 const DONE_LINE = '; print complete';
 const SPEEDS = [1, 2, 5, 10, 25, 50, 100, 200, 500];
 const PRINTER_KEY = 'v3dp.printer';
+// Decoding a huge image can exhaust the tab's memory; it's shrunk to MAX_ANALYSIS_PX anyway.
+const MAX_IMAGE_BYTES = 40 * 1024 * 1024;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -358,10 +370,14 @@ async function loadFile(file: File): Promise<void> {
     toast(`${file.name} isn't a supported file. Use STL, OBJ, 3MF, PLY or a PNG/JPG photo.`);
     return;
   }
+  if (file.size > MAX_IMAGE_BYTES) {
+    toast(`${file.name} is larger than 40 MB. Try a smaller photo.`);
+    return;
+  }
   try {
     const bmp = await createImageBitmap(file);
     setMode('auto');
-      loadSource(bmp, bmp.width, bmp.height, file.name.replace(/\.[^.]+$/, ''));
+    loadSource(bmp, bmp.width, bmp.height, file.name.replace(/\.[^.]+$/, ''));
     bmp.close();
     setActiveSample(null);
   } catch {

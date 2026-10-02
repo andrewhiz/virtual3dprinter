@@ -4,3 +4,6 @@ dist-single
 *.log
 .DS_Store
 .wrangler
+.env
+.env.*
+.dev.vars

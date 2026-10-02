@@ -68,10 +68,10 @@ export class PrinterScene {
   onContextLost: () => void = () => {};
   onContextRestored: () => void = () => {};
 
-  /** Ask the browser for the 3D context back after it was dropped. */
   /** Set when the browser could not start WebGL; the scene then does nothing. */
   readonly failure: string | null = null;
 
+  /** Ask the browser for the 3D context back after it was dropped. */
   restoreContext(): void {
     if (this.failure) return;
     this.renderer.forceContextRestore();

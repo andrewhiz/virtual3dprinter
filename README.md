@@ -1,7 +1,38 @@
 # Virtual 3D Printer
 
-Upload a photo of a product and watch a virtual 3D printer build it, layer by layer.
+[![CI & Deploy](https://github.com/andrewhiz/virtual3dprinter/actions/workflows/ci-deploy.yml/badge.svg)](https://github.com/andrewhiz/virtual3dprinter/actions/workflows/ci-deploy.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+Pick a 3D printer, drop in a 3D model (STL, OBJ, 3MF, PLY) or a product photo, and watch a
+virtual printer build it layer by layer, right in your browser.
 It's a toy: nothing gets exported or printed. It's just fun to watch.
+
+- Three detailed printers (bed-slinger, CoreXY, delta) with working on-printer buttons.
+- Nine built-in 3D samples, plus your own model files or photos.
+- Runs entirely in the browser. No backend, no accounts, no uploads.
+
+## Quick start
+
+You need [Node.js](https://nodejs.org/) 22.12 or newer and npm.
+
+```sh
+git clone https://github.com/andrewhiz/virtual3dprinter.git
+cd virtual3dprinter
+npm ci
+npm run dev          # http://localhost:5173
+```
+
+Other commands:
+
+```sh
+npm test             # analysis, mesh and slicer tests (Node, no browser)
+npm run typecheck
+npm run build        # static site in dist/
+npm run build:single # one self-contained HTML file in dist-single/
+npm run preview      # serve dist/ locally
+```
+
+`dist/` is plain static files, so you can host it anywhere. Cloudflare Workers setup is below.
 
 ## How it works
 
@@ -52,23 +83,28 @@ detection from a single photo is rough.
 
 Colours come from the photo by default, or you can pick a single filament colour.
 
-## Run it
-
-```sh
-npm install
-npm run dev          # http://localhost:5173
-npm test             # analysis + slicer tests (Node, no browser)
-npm run typecheck
-npm run build        # static site in dist/
-npm run build:single # one self-contained HTML file in dist-single/
-```
+## Using it
 
 **Full view** hides the settings so the printer fills the browser window (Esc or Close to exit).
 On phones, and on screens without WebGL, the app lowers render cost, recovers if the browser drops
 the 3D context, and explains what happened instead of showing a black view.
 
-Built with TypeScript, Vite, Three.js and Vitest. There is no backend; photos and model files never leave
-the browser.
+Built with TypeScript, Vite, Three.js and Vitest.
+
+## Privacy and security
+
+- There is no backend. Photos and model files are read in the browser and never leave the device.
+- The page makes no third-party requests: fonts are bundled with the site, and there is no
+  analytics or tracking. The only thing stored is your printer choice, in `localStorage`.
+- `public/_headers` gives the deployed site a strict Content-Security-Policy (same-origin scripts,
+  styles and fonts only; no framing) plus `nosniff`, `no-referrer` and a locked-down
+  `Permissions-Policy`.
+- Uploads are capped at 80 MB and 3 million triangles for models and 40 MB for photos. Triangles
+  with broken (NaN or infinite) coordinates are dropped.
+- CI runs with a read-only token, actions are pinned to commit SHAs, and Dependabot keeps npm
+  packages and actions up to date.
+
+Found a vulnerability? See [SECURITY.md](SECURITY.md).
 
 ## Deploy (Cloudflare Workers)
 
@@ -90,8 +126,26 @@ The first deploy creates the `virtual-3d-printer` Worker at
 `https://virtual-3d-printer.<your-subdomain>.workers.dev`. You can add a custom domain under the
 Worker's *Settings → Domains & Routes*.
 
+For a public repo, also protect the `production` environment (Settings → Environments →
+*production* → Deployment branches → `main` only). Pull requests from forks never get the
+secrets, so they can build and test but not deploy.
+
 **Manual:** `npm run deploy` (builds, then runs `wrangler deploy`; logs in through the browser the
 first time). `npm run preview:worker` serves the build locally on the Workers runtime.
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and
+conventions.
+
+## License
+
+[MIT](LICENSE). Third-party parts keep their own licenses:
+
+- [Three.js](https://threejs.org/) and its loaders: MIT.
+- [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch),
+  [IBM Plex Sans and IBM Plex Mono](https://github.com/IBM/plex) (bundled through
+  [Fontsource](https://fontsource.org/)): SIL Open Font License 1.1.
 
 ## Ideas
 
