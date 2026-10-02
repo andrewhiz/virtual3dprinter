@@ -2,6 +2,7 @@
 
 A plan for the next round of features. Each numbered section below is meant to land as its own
 pull request, in the order given under [Build order](#build-order). Nothing here is built yet.
+The design choices are settled under [Decisions](#decisions).
 
 | # | Feature | Size | Depends on |
 | --- | --- | --- | --- |
@@ -393,7 +394,7 @@ audio graph itself gets a manual check.
 **Performance note:** a 0.4 mm nozzle at 0.2 mm layers on an 80 mm part is millions of moves. The
 stats always use the real settings, computed directly. If the toolpath would go over the instance
 budget, render it at a coarser display layer height and show a note: "Shown at 0.8 mm layers for
-speed; stats use 0.2 mm". This needs a decision below.
+speed; stats use 0.2 mm" (decision 2 below).
 
 **Tests:** grams and cost for a known volume, and nozzle and layer-height limits.
 
@@ -442,19 +443,17 @@ its pure module. For each one, a headless Chromium run against `npm run preview`
 - No requests to other sites.
 - The `?safe` mode still works.
 
-## Decisions needed
+## Decisions
 
-1. **G-code bigger than the bed.** Recommendation: play it anyway, centred, with a warning toast
-   and an offer to switch to the CoreXY. Alternatives: refuse, or scale it down.
-2. **Fine nozzles vs. performance.** Is it OK to render at a coarser layer height when the real
-   settings would exceed the instance budget, while stats use the real settings? Recommendation:
-   yes, with a visible note.
-3. **Default currency.** USD, or pick from the browser language? Recommendation: USD, remembered
-   once changed.
-4. **Share links for failure mode.** Built-in samples only, via the URL hash. Recommendation: yes.
-   It is the cheapest way to make failures shareable and stays fully client-side.
-5. **`.gcode.3mf` in the first G-code PR?** Recommendation: yes; it is Bambu Studio's default
-   export. `.bgcode` waits.
+Agreed on 2026-10-02:
+
+1. **G-code bigger than the bed:** play it anyway, centred, with a warning toast and an offer to
+   switch to the CoreXY.
+2. **Fine nozzles vs. performance:** when the real settings would exceed the instance budget,
+   render at a coarser layer height with a visible note. Stats always use the real settings.
+3. **Default currency:** USD, remembered once changed.
+4. **Share links for failure mode:** yes, for built-in samples only, via the URL hash.
+5. **`.gcode.3mf`:** included in the first G-code PR. Prusa `.bgcode` waits.
 
 ## Out of scope
 
