@@ -33,6 +33,8 @@ npm run preview      # serve dist/ locally
 ```
 
 `dist/` is plain static files, so you can host it anywhere. Cloudflare Workers setup is below.
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) covers Netlify, Vercel, GitHub Pages, Docker + nginx,
+Caddy, Apache, other static hosts and an offline single-file build.
 
 ## How it works
 
@@ -99,6 +101,7 @@ Built with TypeScript, Vite, Three.js and Vitest.
 - `public/_headers` gives the deployed site a strict Content-Security-Policy (same-origin scripts,
   styles and fonts only; no framing) plus `nosniff`, `no-referrer` and a locked-down
   `Permissions-Policy`.
+  The build also copies the CSP into a `<meta>` tag, so hosts without custom headers still enforce it.
 - Uploads are capped at 80 MB and 3 million triangles for models and 40 MB for photos. Triangles
   with broken (NaN or infinite) coordinates are dropped.
 - CI runs with a read-only token, actions are pinned to commit SHAs, and Dependabot keeps npm
@@ -107,6 +110,9 @@ Built with TypeScript, Vite, Three.js and Vitest.
 Found a vulnerability? See [SECURITY.md](SECURITY.md).
 
 ## Deploy (Cloudflare Workers)
+
+Hosting somewhere else? See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for other hosts and
+self-hosting, with matching security-header configs.
 
 The site is fully static, so Cloudflare Workers serves the Vite build (`dist/`) as static assets
 with no worker script. See `wrangler.jsonc`. Static asset requests are free on Workers.
