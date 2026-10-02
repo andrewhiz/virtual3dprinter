@@ -28,6 +28,7 @@ npm run build
   the tests run in Node. Add a test there when you change behaviour.
 - Keep everything same-origin. The site ships a strict Content-Security-Policy
   (`public/_headers`), so new fonts, images or scripts must be bundled rather than loaded from a CDN.
+  If you change the headers, update the copies in `docs/DEPLOYMENT.md` too.
 - Phones matter: check heavier rendering features against `src/printers/quality.ts` (low-power and
   safe modes).
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)

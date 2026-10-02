@@ -2,6 +2,7 @@
 # The app is fully client-side: scripts, styles and fonts all come from this origin. Sample
 # thumbnails are data: URLs, and 3MF textures load from blob: URLs.
 # Nothing is fetched from another origin.
+# vite.config.ts copies the CSP into a meta tag; docs/DEPLOYMENT.md repeats these values for other hosts.
 /*
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
   X-Content-Type-Options: nosniff

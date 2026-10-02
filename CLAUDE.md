@@ -17,9 +17,13 @@ A fun side project: turn a product photo into an animated virtual 3D print. Visu
   WebGL failure (`scene.failure`) and context loss; never let a renderer error take down the UI.
 - Printer-space coordinates are mm, z up, bed centred at 0. The Three.js root group rotates z-up to y-up.
 - Same-origin only: fonts are bundled via `@fontsource`, and `public/_headers` sets a strict CSP and
-  security headers. Never add CDN scripts, styles, fonts or analytics.
+  security headers. Never add CDN scripts, styles, fonts or analytics. `vite.config.ts` copies the CSP
+  into a meta tag at build time; `docs/DEPLOYMENT.md` repeats the header values for other hosts, so
+  update it whenever `public/_headers` changes.
+- `vite.config.ts` is typechecked by `tsconfig.node.json` (Node types); `src/` uses `tsconfig.json` (browser only).
 - Filament is one InstancedMesh; only upload the instance ranges that change per frame.
 - Commands: `npm run dev`, `npm test`, `npm run typecheck`, `npm run build`, `npm run deploy`.
+- Live demo: https://virtual3dprinter.onthejourney.online/ (custom domain on the Worker).
 - Deploy: Cloudflare Workers static assets (`wrangler.jsonc`, no worker script, Worker `virtual3dprinter`).
   Cloudflare Workers Builds deploys `main` (build `npm run build`, deploy `npx wrangler deploy`; preview
   builds off). The GitHub Actions deploy job is an unused alternative; keep its secrets unset.
