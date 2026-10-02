@@ -111,26 +111,26 @@ Found a vulnerability? See [SECURITY.md](SECURITY.md).
 The site is fully static, so Cloudflare Workers serves the Vite build (`dist/`) as static assets
 with no worker script. See `wrangler.jsonc`. Static asset requests are free on Workers.
 
-**Automatic:** `.github/workflows/ci-deploy.yml` typechecks, tests and builds every push and PR.
-Pushes to `main` then deploy with `wrangler deploy`. The deploy step is skipped with a notice until
-these two repository secrets exist. Add them once:
+**Automatic (how this repo deploys): Cloudflare Workers Builds.** The Worker is connected to this
+repo in the Cloudflare dashboard (Worker → Settings → Builds). Every push to `main` runs
+`npm run build` and then `npx wrangler deploy`. Preview builds for other branches are turned off. The
+Worker name in the dashboard must match `name` in `wrangler.jsonc` (`virtual3dprinter`), and the
+site is served at `https://virtual3dprinter.<your-subdomain>.workers.dev`. You can add a custom
+domain under the Worker's *Settings → Domains & Routes*.
+
+**CI:** `.github/workflows/ci-deploy.yml` typechecks, tests and builds every push and PR. It also
+has an optional `wrangler deploy` job for `main`. That job is skipped until `CLOUDFLARE_API_TOKEN`
+and `CLOUDFLARE_ACCOUNT_ID` repository secrets exist. Leave them unset while Workers Builds is
+connected, or every merge deploys twice. To deploy from GitHub Actions instead, disconnect Workers
+Builds and add the secrets:
 
 1. **Account ID**: Cloudflare dashboard → Workers & Pages → copy *Account ID* from the right sidebar.
 2. **API token**: Cloudflare dashboard → My Profile → API Tokens → *Create Token* → use the
    **Edit Cloudflare Workers** template → scope it to your account → create and copy the token.
 3. On GitHub, go to repo **Settings → Secrets and variables → Actions → New repository secret** and add
    `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`.
-4. Re-run the latest *CI & Deploy* workflow (Actions tab → *Run workflow*), or push to `main`.
-
-The Worker is named `virtual3dprinter` (`wrangler.jsonc`) and is served at
-`https://virtual3dprinter.<your-subdomain>.workers.dev`. If you connect the repo with Cloudflare's
-own Git integration (Workers Builds) instead, the Worker name there must match `wrangler.jsonc`,
-and you don't need the GitHub secrets. You can add a custom domain under the
-Worker's *Settings → Domains & Routes*.
-
-For a public repo, also protect the `production` environment (Settings → Environments →
-*production* → Deployment branches → `main` only). Pull requests from forks never get the
-secrets, so they can build and test but not deploy.
+4. Protect the `production` environment (Settings → Environments → *production* → Deployment
+   branches → `main` only). Pull requests from forks never get the secrets.
 
 **Manual:** `npm run deploy` (builds, then runs `wrangler deploy`; logs in through the browser the
 first time). `npm run preview:worker` serves the build locally on the Workers runtime.

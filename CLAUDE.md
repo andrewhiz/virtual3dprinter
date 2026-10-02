@@ -20,8 +20,9 @@ A fun side project: turn a product photo into an animated virtual 3D print. Visu
   security headers. Never add CDN scripts, styles, fonts or analytics.
 - Filament is one InstancedMesh; only upload the instance ranges that change per frame.
 - Commands: `npm run dev`, `npm test`, `npm run typecheck`, `npm run build`, `npm run deploy`.
-- Deploy: Cloudflare Workers static assets (`wrangler.jsonc`, no worker script). CI deploys `main`
-  via `.github/workflows/ci-deploy.yml` once CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID secrets exist.
+- Deploy: Cloudflare Workers static assets (`wrangler.jsonc`, no worker script, Worker `virtual3dprinter`).
+  Cloudflare Workers Builds deploys `main` (build `npm run build`, deploy `npx wrangler deploy`; preview
+  builds off). The GitHub Actions deploy job is an unused alternative; keep its secrets unset.
 - CI actions are pinned to commit SHAs (Dependabot bumps them); the workflow token is read-only.
 - MIT licensed (`LICENSE`); see `SECURITY.md` and `CONTRIBUTING.md`.
 - TypeScript strict, no `any`. Conventional commits.
