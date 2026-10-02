@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Turn a product photo or 3D model into an animated virtual 3D print, in the browser.",
+  "homepage": "https://virtual3dprinter.onthejourney.online/",
   "license": "MIT",
   "repository": {
     "type": "git",

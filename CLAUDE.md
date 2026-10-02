@@ -23,6 +23,7 @@ A fun side project: turn a product photo into an animated virtual 3D print. Visu
 - `vite.config.ts` is typechecked by `tsconfig.node.json` (Node types); `src/` uses `tsconfig.json` (browser only).
 - Filament is one InstancedMesh; only upload the instance ranges that change per frame.
 - Commands: `npm run dev`, `npm test`, `npm run typecheck`, `npm run build`, `npm run deploy`.
+- Live demo: https://virtual3dprinter.onthejourney.online/ (custom domain on the Worker).
 - Deploy: Cloudflare Workers static assets (`wrangler.jsonc`, no worker script, Worker `virtual3dprinter`).
   Cloudflare Workers Builds deploys `main` (build `npm run build`, deploy `npx wrangler deploy`; preview
   builds off). The GitHub Actions deploy job is an unused alternative; keep its secrets unset.

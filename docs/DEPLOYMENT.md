@@ -53,7 +53,7 @@ won't load. The meta-tag fallback already leaves it out.
 
 ## Cloudflare Workers
 
-This is how the project's own site deploys. See [README → Deploy](../README.md#deploy-cloudflare-workers).
+This is how the project's own site, [virtual3dprinter.onthejourney.online](https://virtual3dprinter.onthejourney.online/), deploys. See [README → Deploy](../README.md#deploy-cloudflare-workers).
 In short: connect the repo under **Workers & Pages → Create → Import a repository** with build
 command `npm run build` and deploy command `npx wrangler deploy`, or run `npm run deploy` from your
 machine. Set `name` in `wrangler.jsonc` to your Worker's name.

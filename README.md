@@ -2,6 +2,9 @@
 
 [![CI & Deploy](https://github.com/andrewhiz/virtual3dprinter/actions/workflows/ci-deploy.yml/badge.svg)](https://github.com/andrewhiz/virtual3dprinter/actions/workflows/ci-deploy.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Live demo](https://img.shields.io/badge/demo-live-ff8a3d.svg)](https://virtual3dprinter.onthejourney.online/)
+
+**Try it live: [virtual3dprinter.onthejourney.online](https://virtual3dprinter.onthejourney.online/)**
 
 Pick a 3D printer, drop in a 3D model (STL, OBJ, 3MF, PLY) or a product photo, and watch a
 virtual printer build it layer by layer, right in your browser.
@@ -116,6 +119,8 @@ self-hosting, with matching security-header configs.
 
 The site is fully static, so Cloudflare Workers serves the Vite build (`dist/`) as static assets
 with no worker script. See `wrangler.jsonc`. Static asset requests are free on Workers.
+
+The live demo at [virtual3dprinter.onthejourney.online](https://virtual3dprinter.onthejourney.online/) is deployed this way.
 
 **Automatic (how this repo deploys): Cloudflare Workers Builds.** The Worker is connected to this
 repo in the Cloudflare dashboard (Worker → Settings → Builds). Every push to `main` runs

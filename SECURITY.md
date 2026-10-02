@@ -15,7 +15,8 @@ effort, but they will be credited unless you'd rather stay anonymous.
 
 ## Supported versions
 
-Only the latest commit on `main` (the deployed site) is supported.
+Only the latest commit on `main` is supported. That's what the live site at
+<https://virtual3dprinter.onthejourney.online/> runs.
 
 ## Scope
 
