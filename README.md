@@ -122,8 +122,10 @@ these two repository secrets exist. Add them once:
    `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`.
 4. Re-run the latest *CI & Deploy* workflow (Actions tab → *Run workflow*), or push to `main`.
 
-The first deploy creates the `virtual-3d-printer` Worker at
-`https://virtual-3d-printer.<your-subdomain>.workers.dev`. You can add a custom domain under the
+The Worker is named `virtual3dprinter` (`wrangler.jsonc`) and is served at
+`https://virtual3dprinter.<your-subdomain>.workers.dev`. If you connect the repo with Cloudflare's
+own Git integration (Workers Builds) instead, the Worker name there must match `wrangler.jsonc`,
+and you don't need the GitHub secrets. You can add a custom domain under the
 Worker's *Settings → Domains & Routes*.
 
 For a public repo, also protect the `production` environment (Settings → Environments →
