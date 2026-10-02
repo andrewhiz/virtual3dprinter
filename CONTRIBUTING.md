@@ -24,8 +24,8 @@ npm run build
 ## Conventions
 
 - TypeScript strict mode, no `any`.
-- `analyze.ts`, `model.ts`, `meshModel.ts`, `slicer.ts` and `gcode.ts` stay pure and DOM-free so
-  the tests run in Node. Add a test there when you change behaviour.
+- `analyze.ts`, `model.ts`, `meshModel.ts`, `slicer.ts`, `toolpath.ts`, `playback.ts` and `gcode.ts`
+  stay pure and DOM-free so the tests run in Node. Add a test there when you change behaviour.
 - Keep everything same-origin. The site ships a strict Content-Security-Policy
   (`public/_headers`), so new fonts, images or scripts must be bundled rather than loaded from a CDN.
   If you change the headers, update the copies in `docs/DEPLOYMENT.md` too.

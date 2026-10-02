@@ -19,7 +19,8 @@ import { MESH_SAMPLES, sampleMesh, type MeshSample } from './meshSamples';
 import { PRINTERS, printerById, type ControlAction, type PrinterSpec } from './printers';
 import { diagnostics, quality, rememberSafeMode, reloadInSafeMode } from './printers/quality';
 import { PrinterScene, type PrintStatus } from './scene';
-import { DEFAULT_SLICE_OPTIONS, slice, type SliceResult } from './slicer';
+import { DEFAULT_SLICE_OPTIONS, slice } from './slicer';
+import { fitToBudget, toolpathStats, type Toolpath } from './toolpath';
 
 const MAX_ANALYSIS_PX = 180;
 const GCODE_LINES = 14;
@@ -28,6 +29,9 @@ const SPEEDS = [1, 2, 5, 10, 25, 50, 100, 200, 500];
 const PRINTER_KEY = 'v3dp.printer';
 // Decoding a huge image can exhaust the tab's memory; it's shrunk to MAX_ANALYSIS_PX anyway.
 const MAX_IMAGE_BYTES = 40 * 1024 * 1024;
+// Each drawn filament segment costs about 80 bytes of GPU memory; phones get less.
+const MAX_SEGMENTS = quality.lowPower ? 500_000 : 2_000_000;
+const FILAMENT_AREA = Math.PI * 0.875 * 0.875; // 1.75 mm filament
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -74,8 +78,10 @@ let meshData: MeshData | null = null;
 let upAxis: 'z' | 'y' = 'z';
 let modeChoice: Mode | 'auto' = 'auto';
 let colorMode: 'photo' | 'filament' = 'photo';
-let gcode = new GcodeWriter(DEFAULT_SLICE_OPTIONS.lineWidth, DEFAULT_SLICE_OPTIONS.layerHeight);
+const gcode = new GcodeWriter();
 let gcodeLines: string[] = [];
+/** The toolpath being printed. */
+let path: Toolpath | null = null;
 
 function readStored(): string | null {
   try {
@@ -178,6 +184,7 @@ function resetSession(): void {
   analysis = null;
   analysisCanvas = null;
   meshData = null;
+  path = null;
   scene.clearPrint();
   setActiveSample(null);
   const cv = $<HTMLCanvasElement>('preview');
@@ -585,11 +592,15 @@ function rebuild(): void {
     infillDensity: Number($<HTMLInputElement>('infill').value) / 100,
     colorMode,
     filamentColor,
+    printSpeed: selected.printSpeed,
+    travelSpeed: selected.travelSpeed,
   };
-  const result = slice(model, opts);
-  gcode = new GcodeWriter(opts.lineWidth, opts.layerHeight);
-  showStats(result);
-  scene.load(result);
+  const sliced = slice(model, opts);
+  const fitted = fitToBudget(sliced, MAX_SEGMENTS);
+  if (fitted.tolerance > 0) toast(`Big print: the drawn path is simplified (${fitted.tolerance.toFixed(2)} mm) so it plays smoothly. Stats use the full path.`);
+  path = fitted.path;
+  showStats(sliced);
+  scene.load(path);
   scene.fileName = `${sourceName}.gcode`;
   restartPrint();
   scene.playing = true;
@@ -604,12 +615,13 @@ function restartPrint(): void {
   scene.restart();
 }
 
-function showStats(r: SliceResult): void {
-  const filamentM = (r.extrudeMm * r.lineWidth * r.layerHeight) / (Math.PI * 0.875 * 0.875) / 1000;
-  $('s-layers').textContent = r.layerCount.toLocaleString();
-  $('s-moves').textContent = r.moves.length.toLocaleString();
-  $('s-fil').textContent = `${filamentM.toFixed(1)} m`;
-  $('s-time').textContent = clock(r.extrudeMm / selected.printSpeed + r.travelMm / selected.travelSpeed);
+/** Stats come from the full toolpath, before any simplification for drawing. */
+function showStats(p: Toolpath): void {
+  const st = toolpathStats(p);
+  $('s-layers').textContent = p.layerCount.toLocaleString();
+  $('s-moves').textContent = p.count.toLocaleString();
+  $('s-fil').textContent = `${(st.volumeMm3 / FILAMENT_AREA / 1000).toFixed(1)} m`;
+  $('s-time').textContent = clock(st.seconds);
 }
 
 function clock(sec: number): string {
@@ -621,7 +633,7 @@ function clock(sec: number): string {
 let lastHud = 0;
 let lastState = '';
 scene.onStatus = (s: PrintStatus) => {
-  for (const m of s.newMoves) gcodeLines.push(...gcode.lines(m));
+  if (path) for (let i = s.from; i < s.to; i++) gcodeLines.push(...gcode.lines(path, i));
   if (s.state === 'done' && gcodeLines.length && gcodeLines[gcodeLines.length - 1] !== DONE_LINE) {
     gcodeLines.push('G91', 'G1 Z20 ; park', 'M104 S0', 'M140 S0', DONE_LINE);
   }

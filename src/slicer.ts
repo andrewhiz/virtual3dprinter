@@ -3,6 +3,7 @@
 
 import type { RGB } from './analyze';
 import type { Model } from './model';
+import { MoveKind, packRGB, ToolpathBuilder, type Toolpath } from './toolpath';
 
 export interface SliceOptions {
   layerHeight: number;
@@ -14,6 +15,9 @@ export interface SliceOptions {
   solidLayers: number;
   colorMode: 'photo' | 'filament';
   filamentColor: RGB;
+  /** Nozzle speeds in mm/s while extruding and travelling. */
+  printSpeed: number;
+  travelSpeed: number;
 }
 
 export const DEFAULT_SLICE_OPTIONS: SliceOptions = {
@@ -24,32 +28,9 @@ export const DEFAULT_SLICE_OPTIONS: SliceOptions = {
   solidLayers: 2,
   colorMode: 'photo',
   filamentColor: [255, 140, 60],
+  printSpeed: 80,
+  travelSpeed: 180,
 };
-
-export const MoveKind = { Travel: 0, Perimeter: 1, Infill: 2 } as const;
-export type MoveKind = (typeof MoveKind)[keyof typeof MoveKind];
-
-export interface Move {
-  x0: number;
-  y0: number;
-  x1: number;
-  y1: number;
-  /** Nozzle height for this move (top of the layer). */
-  z: number;
-  kind: MoveKind;
-  layer: number;
-  color: RGB;
-}
-
-export interface SliceResult {
-  moves: Move[];
-  layerCount: number;
-  extrudeCount: number;
-  extrudeMm: number;
-  travelMm: number;
-  layerHeight: number;
-  lineWidth: number;
-}
 
 interface Grid {
   gx: number;
@@ -60,7 +41,8 @@ interface Grid {
   v: Float32Array;
 }
 
-export function slice(model: Model, o: SliceOptions): SliceResult {
+/** Moves sit at the top of their layer: z is the nozzle height while printing it. */
+export function slice(model: Model, o: SliceOptions): Toolpath {
   const lw = o.lineWidth;
   const lh = o.layerHeight;
   const c = Math.max(Math.max(model.sizeX, model.sizeY) / 120, 0.25, lw * 0.35);
@@ -76,9 +58,10 @@ export function slice(model: Model, o: SliceOptions): SliceResult {
   };
 
   const layerCount = Math.max(1, Math.ceil(model.sizeZ / lh - 1e-6));
-  const moves: Move[] = [];
+  const out = new ToolpathBuilder(4096);
+  out.layerCount = layerCount;
+  const filament = packRGB(o.filamentColor);
   let nx = 0, ny = 0;
-  let extrudeCount = 0, extrudeMm = 0, travelMm = 0;
 
   for (let k = 0; k < layerCount; k++) {
     const zs = Math.min((k + 0.5) * lh, model.sizeZ - 1e-3);
@@ -97,16 +80,13 @@ export function slice(model: Model, o: SliceOptions): SliceResult {
     const emit = (x1: number, y1: number, kind: MoveKind) => {
       const len = Math.hypot(x1 - nx, y1 - ny);
       if (len < 1e-4) return;
-      let color: RGB = o.filamentColor;
-      if (kind !== MoveKind.Travel && o.colorMode === 'photo') {
-        color = model.color((nx + x1) / 2, (ny + y1) / 2, zs);
-      }
-      moves.push({ x0: nx, y0: ny, x1, y1, z, kind, layer: k, color });
-      if (kind === MoveKind.Travel) travelMm += len;
-      else {
-        extrudeCount++;
-        extrudeMm += len;
-      }
+      const travel = kind === MoveKind.Travel;
+      const color = !travel && o.colorMode === 'photo' ? packRGB(model.color((nx + x1) / 2, (ny + y1) / 2, zs)) : filament;
+      out.push({
+        x0: nx, y0: ny, z0: z, x1, y1, z1: z,
+        width: lw, height: lh, feed: travel ? o.travelSpeed : o.printSpeed,
+        kind, layer: k, color,
+      });
       nx = x1;
       ny = y1;
     };
@@ -134,13 +114,15 @@ export function slice(model: Model, o: SliceOptions): SliceResult {
         emit(loop[bestPt * 2], loop[bestPt * 2 + 1], MoveKind.Travel);
         for (let s = 1; s <= n; s++) {
           const q = ((bestPt + s) % n) * 2;
-          emit(loop[q], loop[q + 1], MoveKind.Perimeter);
+          emit(loop[q], loop[q + 1], p === 0 ? MoveKind.OuterWall : MoveKind.InnerWall);
         }
       }
     }
 
     // Infill: diagonal lines, direction alternating each layer, boustrophedon order.
-    const solid = k < o.solidLayers || k >= layerCount - o.solidLayers;
+    const top = k >= layerCount - o.solidLayers;
+    const solid = top || k < o.solidLayers;
+    const fill = top ? MoveKind.TopSurface : solid ? MoveKind.SolidInfill : MoveKind.SparseInfill;
     const spacing = solid ? lw : lw / Math.max(0.05, Math.min(1, o.infillDensity));
     const iso = lw * o.perimeters - lw * 0.3;
     const ang = k % 2 ? -Math.PI / 4 : Math.PI / 4;
@@ -169,13 +151,13 @@ export function slice(model: Model, o: SliceOptions): SliceResult {
       if (flip) order.reverse();
       for (let s = 0; s < order.length; s += 2) {
         emit(bx + dx * order[s], by + dy * order[s], MoveKind.Travel);
-        emit(bx + dx * order[s + 1], by + dy * order[s + 1], MoveKind.Infill);
+        emit(bx + dx * order[s + 1], by + dy * order[s + 1], fill);
       }
       flip = !flip;
     }
   }
 
-  return { moves, layerCount, extrudeCount, extrudeMm, travelMm, layerHeight: lh, lineWidth: lw };
+  return out.build();
 }
 
 function sampleGrid(g: Grid, x: number, y: number): number {
