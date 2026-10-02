@@ -2,6 +2,15 @@
   "name": "virtual-3d-printer",
   "private": true,
   "version": "0.1.0",
+  "description": "Turn a product photo or 3D model into an animated virtual 3D print, in the browser.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andrewhiz/virtual3dprinter.git"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,6 +23,9 @@
     "preview:worker": "npm run build && wrangler dev"
   },
   "dependencies": {
+    "@fontsource/chakra-petch": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
     "three": "^0.186.1"
   },
   "devDependencies": {

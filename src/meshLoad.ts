@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import type { RGB } from './analyze';
-import type { MeshData } from './meshModel';
+import { dropNonFinite, type MeshData } from './meshModel';
 
 export const MESH_EXTENSIONS = ['stl', 'obj', '3mf', 'ply'] as const;
 export const MAX_MESH_BYTES = 80 * 1024 * 1024;
@@ -45,6 +45,7 @@ export async function loadMeshFile(file: File): Promise<MeshData> {
       break;
     }
   }
+  data.positions = dropNonFinite(data.positions);
   const tris = data.positions.length / 9;
   if (!tris) throw new Error(`${file.name} has no triangles to print.`);
   if (tris > MAX_TRIANGLES) throw new Error(`${file.name} has ${tris.toLocaleString()} triangles; the limit is 3 million.`);

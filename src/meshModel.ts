@@ -47,6 +47,27 @@ export function meshBounds(positions: Float32Array, upAxis: 'z' | 'y'): MeshBoun
   return { x: mx[0] - mn[0], y: mx[1] - mn[1], z: mx[2] - mn[2] };
 }
 
+/** Drops triangles with NaN or infinite coordinates, which broken exporters sometimes write. */
+export function dropNonFinite(positions: Float32Array): Float32Array {
+  const n = Math.floor(positions.length / 9);
+  let keep = 0;
+  const ok = new Uint8Array(n);
+  for (let t = 0; t < n; t++) {
+    let finite = true;
+    for (let k = t * 9; k < t * 9 + 9 && finite; k++) finite = Number.isFinite(positions[k]);
+    ok[t] = finite ? 1 : 0;
+    keep += ok[t];
+  }
+  if (keep === n && positions.length === n * 9) return positions;
+  const out = new Float32Array(keep * 9);
+  for (let t = 0, o = 0; t < n; t++) {
+    if (!ok[t]) continue;
+    out.set(positions.subarray(t * 9, t * 9 + 9), o);
+    o += 9;
+  }
+  return out;
+}
+
 function orient(x: number, y: number, z: number, up: 'z' | 'y'): [number, number, number] {
   return up === 'z' ? [x, y, z] : [x, -z, y];
 }
