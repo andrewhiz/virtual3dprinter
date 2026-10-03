@@ -111,6 +111,76 @@ describe('buildMeshModel', () => {
   });
 });
 
+describe('iconic samples', () => {
+  const get = (id: string) => {
+    const sm = MESH_SAMPLES.find((x) => x.id === id);
+    if (!sm) throw new Error(`${id} sample missing`);
+    return sm;
+  };
+  /** Model at the sample's own size, plus how far it was shifted to centre it on the bed. */
+  const native = (id: string) => {
+    const mesh = sampleMesh(get(id));
+    const p = mesh.positions;
+    const lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+    for (let i = 0; i < p.length; i += 3) for (let k = 0; k < 2; k++) {
+      lo[k] = Math.min(lo[k], p[i + k]);
+      hi[k] = Math.max(hi[k], p[i + k]);
+    }
+    const b = meshBounds(p, 'z');
+    const model = buildMeshModel(mesh, { ...opts, sizeMm: Math.max(b.x, b.y, b.z), maxFootprintMm: 500, maxHeightMm: 500 });
+    const cx = (lo[0] + hi[0]) / 2, cy = (lo[1] + hi[1]) / 2;
+    // Field at a point given in the sample's own coordinates.
+    return (x: number, y: number, z: number) => model.field(x - cx, y - cy, z);
+  };
+
+  it('builds closed shells whose edges all pair up in opposite directions', () => {
+    for (const id of ['tug', 'cube', 'stringing']) {
+      const p = get(id).build();
+      const key = (i: number) => `${p[i].toFixed(3)},${p[i + 1].toFixed(3)},${p[i + 2].toFixed(3)}`;
+      const edges = new Map<string, number>();
+      for (let t = 0; t < p.length; t += 9) {
+        const v = [key(t), key(t + 3), key(t + 6)];
+        for (let e = 0; e < 3; e++) {
+          if (v[e] === v[(e + 1) % 3]) continue;
+          const k = `${v[e]}|${v[(e + 1) % 3]}`;
+          edges.set(k, (edges.get(k) ?? 0) + 1);
+        }
+      }
+      for (const [k, n] of edges) {
+        const [a, b] = k.split('|');
+        expect(edges.get(`${b}|${a}`) ?? 0, `${id} edge ${k}`).toBe(n);
+      }
+    }
+  });
+
+  it('raises the letters on the calibration cube', () => {
+    const field = native('cube');
+    expect(field(0, -10.6, 10)).toBeGreaterThan(0); // where the strokes of the X cross, proud of the face
+    expect(field(0, -10.6, 15.5)).toBeLessThan(0); // between the arms of the X
+    expect(field(10.6, 0, 7)).toBeGreaterThan(0); // stem of the Y
+    expect(field(0, 0, 20.6)).toBeGreaterThan(0); // diagonal of the Z on top
+    expect(field(0, 0, 10)).toBeGreaterThan(0); // the cube is solid
+  });
+
+  it('gives the tugboat a flat keel and an overhanging wheelhouse roof', () => {
+    const field = native('tug');
+    expect(field(-10, 0, 0.4)).toBeGreaterThan(0); // sits on the bed
+    expect(field(-11, 0, 31)).toBeLessThan(0); // under the roof overhang, behind the wheelhouse
+    expect(field(-11, 0, 34.8)).toBeGreaterThan(0); // the roof itself
+    expect(field(0, 0, 25)).toBeGreaterThan(0); // deckhouse joined to the hull
+  });
+
+  it('loads each sample at a size every printer can take', () => {
+    for (const sm of MESH_SAMPLES) {
+      const b = meshBounds(sm.build(), 'z');
+      const longest = sm.printSize ?? Math.max(b.x, b.y, b.z, 80);
+      const k = longest / Math.max(b.x, b.y, b.z);
+      expect(Math.max(b.x, b.y) * k, sm.id).toBeLessThanOrEqual(150); // the delta's footprint
+    }
+    expect(MESH_SAMPLES[0].id).toBe('tug');
+  });
+});
+
 describe('loadMeshFile', () => {
   it('reads an ASCII STL', async () => {
     const tri = (a: number[], b: number[], c: number[]) =>

@@ -16,6 +16,8 @@ export interface MeshData {
   format: string;
   /** Which axis points up in the file's coordinates. */
   upAxis: 'z' | 'y';
+  /** Longest side to load at, in mm (built-in samples that read best at a set size). */
+  printSize?: number;
 }
 
 export interface MeshModelOptions {

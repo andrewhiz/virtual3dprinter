@@ -11,7 +11,8 @@ A fun side project: turn a product photo into an animated virtual 3D print. Visu
   `printers/` holds one file per machine (`slinger`, `corexy`, `delta`) built from shared `parts.ts`
   and `panel.ts`; each exports a `PrinterSpec` whose `build()` returns a `PrinterRig`. `main.ts` wires the UI.
 - 3D files: `meshLoad.ts` (Three.js loaders, lazy) -> `meshModel.ts` (per-layer even-odd fill + SDF) -> slicer.
-  `meshSamples.ts` generates the built-in samples (closed, outward-facing shells; parts may overlap);
+  `meshSamples.ts` generates the built-in samples (closed, outward-facing shells; parts may overlap;
+  optional `printSize` is the longest side they load at);
   `meshPreview.ts` draws thumbnails. Mesh fill is non-zero winding with a per-row even-odd fallback,
   so every generated shell must be closed (cap arcs and open ends).
 - `analyze`, `model`, `meshModel`, `slicer`, `toolpath`, `playback`, `gcode` are pure and DOM-free; keep them that way so tests run in Node.

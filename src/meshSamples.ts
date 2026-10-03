@@ -13,6 +13,8 @@ export interface MeshSample {
   id: string;
   label: string;
   color: RGB;
+  /** Longest side to load at, in mm; otherwise its own size, but at least 80 mm. */
+  printSize?: number;
   build(): Float32Array;
 }
 
@@ -184,8 +186,88 @@ class Soup {
     }
   }
 
+  /**
+   * Hull-style loft along x through cross-sections in (y, z). Every section has the same number
+   * of points and is star-shaped around its centroid; the two end sections are capped flat.
+   */
+  loft(sections: { x: number; pts: V2[] }[]): void {
+    const at = (s: { x: number; pts: V2[] }, i: number): V3 => [s.x, ...s.pts[i]];
+    const centroid = (s: { x: number; pts: V2[] }): V3 => {
+      let y = 0, z = 0;
+      for (const [py, pz] of s.pts) {
+        y += py;
+        z += pz;
+      }
+      return [s.x, y / s.pts.length, z / s.pts.length];
+    };
+    for (let k = 0; k + 1 < sections.length; k++) {
+      const A = sections[k], B = sections[k + 1];
+      const ca = centroid(A), cb = centroid(B);
+      const mid: V3 = [(ca[0] + cb[0]) / 2, (ca[1] + cb[1]) / 2, (ca[2] + cb[2]) / 2];
+      const n = A.pts.length;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        this.tri(at(A, i), at(A, j), at(B, j), mid);
+        this.tri(at(A, i), at(B, j), at(B, i), mid);
+      }
+    }
+    const first = sections[0], last = sections[sections.length - 1];
+    for (const [cap, inwardX] of [[first, 1], [last, -1]] as const) {
+      const c = centroid(cap);
+      const inside: V3 = [c[0] + inwardX, c[1], c[2]];
+      for (let i = 0; i < cap.pts.length; i++) this.tri(c, at(cap, i), at(cap, (i + 1) % cap.pts.length), inside);
+    }
+  }
+
+  /** Add another closed shell, moved by `map` (which must not mirror it). */
+  append(positions: Float32Array, map: (p: V3) => V3): void {
+    for (let i = 0; i < positions.length; i += 3) this.v.push(...map([positions[i], positions[i + 1], positions[i + 2]]));
+  }
+
+  /** Axis-aligned box from corner `lo` to corner `hi`. */
+  box(lo: V3, hi: V3): void {
+    const c: V3 = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+    const p = (ix: number, iy: number, iz: number): V3 => [ix ? hi[0] : lo[0], iy ? hi[1] : lo[1], iz ? hi[2] : lo[2]];
+    const quads: [V3, V3, V3, V3][] = [
+      [p(0, 0, 0), p(1, 0, 0), p(1, 1, 0), p(0, 1, 0)],
+      [p(0, 0, 1), p(1, 0, 1), p(1, 1, 1), p(0, 1, 1)],
+      [p(0, 0, 0), p(1, 0, 0), p(1, 0, 1), p(0, 0, 1)],
+      [p(0, 1, 0), p(1, 1, 0), p(1, 1, 1), p(0, 1, 1)],
+      [p(0, 0, 0), p(0, 1, 0), p(0, 1, 1), p(0, 0, 1)],
+      [p(1, 0, 0), p(1, 1, 0), p(1, 1, 1), p(1, 0, 1)],
+    ];
+    for (const [a, b, cc, d] of quads) {
+      this.tri(a, b, cc, c);
+      this.tri(a, cc, d, c);
+    }
+  }
+
   done(): Float32Array {
     return new Float32Array(this.v);
+  }
+}
+
+/** A straight stroke of width w from a to b, as a rectangle (for raised lettering). */
+const stroke = (a: V2, b: V2, w: number): V2[] => {
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const nx = (-(b[1] - a[1]) / len) * (w / 2), ny = ((b[0] - a[0]) / len) * (w / 2);
+  return [[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]];
+};
+
+/** Block letters X, Y and Z in a box `size` tall centred on the origin, as overlapping strokes. */
+function letterStrokes(letter: 'X' | 'Y' | 'Z', size: number, w: number): V2[][] {
+  const h = size / 2, hw = size * 0.38;
+  switch (letter) {
+    case 'X':
+      return [stroke([-hw, -h], [hw, h], w), stroke([-hw, h], [hw, -h], w)];
+    case 'Y':
+      return [stroke([-hw, h], [0, 0], w), stroke([hw, h], [0, 0], w), stroke([0, 0.6], [0, -h], w)];
+    case 'Z':
+      return [
+        stroke([-hw, h - w / 2], [hw, h - w / 2], w),
+        stroke([hw - w * 0.4, h - w], [-hw + w * 0.4, -h + w], w),
+        stroke([-hw, -h + w / 2], [hw, -h + w / 2], w),
+      ];
   }
 }
 
@@ -203,6 +285,100 @@ const profileOf = (height: number, steps: number, r: (t: number) => number): V2[
   Array.from({ length: steps + 1 }, (_, k) => [Math.max(0, r(k / steps)), (k / steps) * height] as V2);
 
 export const MESH_SAMPLES: MeshSample[] = [
+  {
+    id: 'tug',
+    label: 'Tugboat',
+    color: [242, 107, 33],
+    printSize: 100,
+    build() {
+      // Our own design (not 3DBenchy): a stubby harbour tug, 72 mm long, bow at +x.
+      const s = new Soup();
+      const L = 72, x0 = -L / 2;
+      // t runs 0 (stern) .. 1 (bow).
+      const halfWidth = (t: number) => {
+        if (t < 0.18) return 10.5 + 3 * Math.sin((t / 0.18) * (Math.PI / 2));
+        if (t < 0.55) return 13.5;
+        return Math.max(0.4, 13.5 * Math.cos(((t - 0.55) / 0.45) * (Math.PI / 2)) ** 0.75);
+      };
+      const deck = (t: number) => 15 + 6 * t ** 2.2; // sheer line rises to the bow
+      const keel = (t: number) => (t < 0.68 ? 0 : 10 * ((t - 0.68) / 0.32) ** 1.6); // cut-away forefoot
+      const sections = [];
+      for (let k = 0; k <= 40; k++) {
+        const t = k / 40, w = halfWidth(t), top = deck(t), bottom = keel(t);
+        const pts: V2[] = [];
+        for (let i = 0; i <= 18; i++) {
+          const a = (i / 18) * Math.PI;
+          // Round bilges with a flat strip along the keel, so the hull sits on the bed.
+          pts.push([w * Math.cos(a), Math.max(bottom, top - (top - bottom) * 1.08 * Math.sin(a) ** 0.55)]);
+        }
+        sections.push({ x: x0 + t * L, pts });
+      }
+      s.loft(sections);
+      const deckAt = (x: number) => deck((x - x0) / L);
+
+      // Deckhouse, then a wheelhouse whose roof overhangs on every side.
+      s.box([-22, -9, deckAt(-22) - 1], [6, 9, 27]);
+      s.box([-10, -7.5, 26], [5, 7.5, 34]);
+      s.box([-12, -9, 34], [7.5, 9, 35.6]);
+      // Raked funnel behind the wheelhouse.
+      const funnel = new Soup();
+      funnel.lathe([[4.2, 0], [4.2, 14], [4.8, 14.6], [4.8, 16]], 32);
+      s.append(funnel.done(), ([x, y, z]) => [x - 17 - z * 0.22, y, z + 26]);
+      // Mast on the wheelhouse roof, and bollards fore and aft.
+      const mast = new Soup();
+      mast.lathe([[1.6, 0], [1.6, 11], [0, 12]], 16);
+      s.append(mast.done(), ([x, y, z]) => [x - 2, y, z + 35]);
+      const bollard = new Soup();
+      bollard.lathe([[2, 0], [1.6, 3], [2.6, 3.4], [2.6, 4.6], [0, 4.6]], 20);
+      const bollards = bollard.done();
+      for (const [bx, by] of [[18, -5], [18, 5], [-30, -6], [-30, 6]]) {
+        const bz = deckAt(bx) - 0.8;
+        s.append(bollards, ([x, y, z]) => [x + bx, y + by, z + bz]);
+      }
+      return s.done();
+    },
+  },
+  {
+    id: 'cube',
+    label: 'Calibration cube',
+    color: [96, 125, 160],
+    // Twice the classic 20 mm, so the letters stay crisp at this app's chunky line width.
+    printSize: 40,
+    build() {
+      // A 20 mm cube with raised X, Y and Z, each on the face you measure that axis across.
+      const s = new Soup();
+      const C = 20, lift = 1.5, size = 13, w = 2.8;
+      s.box([-C / 2, -C / 2, 0], [C / 2, C / 2, C]);
+      // Each face: letter plane axes (right, up as seen from outside) and the outward normal.
+      const faces: { letter: 'X' | 'Y' | 'Z'; origin: V3; U: V3; V: V3; W: V3 }[] = [
+        { letter: 'X', origin: [0, -C / 2, C / 2], U: [1, 0, 0], V: [0, 0, 1], W: [0, -1, 0] },
+        { letter: 'Y', origin: [C / 2, 0, C / 2], U: [0, 1, 0], V: [0, 0, 1], W: [1, 0, 0] },
+        { letter: 'Z', origin: [0, 0, C], U: [1, 0, 0], V: [0, 1, 0], W: [0, 0, 1] },
+      ];
+      for (const f of faces) {
+        // Strokes sink 0.4 mm into the face so they merge with it, and stand `lift` proud.
+        const t = lift + 0.4, off = lift / 2 - 0.2;
+        const o: V3 = [f.origin[0] + f.W[0] * off, f.origin[1] + f.W[1] * off, f.origin[2] + f.W[2] * off];
+        for (const poly of letterStrokes(f.letter, size, w)) s.prism(poly, o, f.U, f.V, f.W, t);
+      }
+      return s.done();
+    },
+  },
+  {
+    id: 'stringing',
+    label: 'Stringing test',
+    color: [200, 60, 140],
+    build() {
+      // Two thin towers on a thin plate: travel between them shows any stringing.
+      const s = new Soup();
+      s.box([-30, -7, 0], [30, 7, 1.6]);
+      const tower = new Soup();
+      tower.lathe([[5, 0], [5, 6], [3.6, 9], [3.6, 46], [0, 48]], 40);
+      const t = tower.done();
+      for (const x of [-21, 21]) s.append(t, ([px, py, pz]) => [px + x, py, pz + 0.8]);
+      return s.done();
+    },
+  },
   {
     id: 'vase',
     label: 'Vase',
@@ -395,5 +571,5 @@ export const MESH_SAMPLES: MeshSample[] = [
 ];
 
 export function sampleMesh(sample: MeshSample): MeshData {
-  return { positions: sample.build(), color: sample.color, name: sample.id, format: 'Sample', upAxis: 'z' };
+  return { positions: sample.build(), color: sample.color, name: sample.id, format: 'Sample', upAxis: 'z', printSize: sample.printSize };
 }
