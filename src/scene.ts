@@ -1,6 +1,6 @@
 // The workshop scene: a workbench, lighting, the selected printer, and the print animation.
 // Deposited filament is one InstancedMesh parented to the printer's bed; each frame only the
-// instance being extruded is re-uploaded.
+// instance being extruded is re-uploaded. Timing and nozzle position come from playback.ts.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -8,7 +8,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { ControlAction, PanelState, PrinterRig, PrinterSpec } from './printers';
 import { quality } from './printers/quality';
 import { woodTexture } from './printers/surfaces';
-import { MoveKind, type Move, type SliceResult } from './slicer';
+import { Playhead } from './playback';
+import { extrusionsBefore, isExtrusion, segmentTransform, type TimelineEvent, type Toolpath } from './toolpath';
 
 const PARK_Z = 30;
 const AMBIENT = 24;
@@ -25,7 +26,9 @@ export interface PrintStatus {
   nozzle: number;
   bed: number;
   chamber: number | null;
-  newMoves: Move[];
+  /** Moves from..to-1 finished since the last status. */
+  from: number;
+  to: number;
 }
 
 export class PrinterScene {
@@ -41,14 +44,13 @@ export class PrinterScene {
   private spec: PrinterSpec | null = null;
   private rig: PrinterRig | null = null;
   private mesh: THREE.InstancedMesh | null = null;
-  private result: SliceResult | null = null;
-  private instanceOf: Int32Array = new Int32Array(0);
-  private moveIdx = 0;
-  private moveDone = 0;
+  private path: Toolpath | null = null;
+  private playhead: Playhead | null = null;
+  /** Instance index of each move's filament segment: extrusionsBefore[i]. */
+  private before: Uint32Array = new Uint32Array(1);
+  /** The instance drawn part-way, and its move. */
   private partial = -1;
   private partialMove = -1;
-  private printSeconds = 0;
-  private totalSeconds = 0;
   private spoolAngle = 0;
   private nozzle = new THREE.Vector3(0, 0, PARK_Z);
   private extruding = false;
@@ -65,6 +67,7 @@ export class PrinterScene {
   fileName = 'no_model.gcode';
   onStatus: (s: PrintStatus) => void = () => {};
   onControl: (a: ControlAction) => void = () => {};
+  onEvent: (e: TimelineEvent) => void = () => {};
   onContextLost: () => void = () => {};
   onContextRestored: () => void = () => {};
 
@@ -78,10 +81,8 @@ export class PrinterScene {
   }
 
   private tmpM = new THREE.Matrix4();
-  private tmpQ = new THREE.Quaternion();
+  private tmpT = new Float64Array(12);
   private tmpV = new THREE.Vector3();
-  private tmpS = new THREE.Vector3();
-  private zAxis = new THREE.Vector3(0, 0, 1);
 
   constructor(private container: HTMLElement) {
     try {
@@ -239,47 +240,46 @@ export class PrinterScene {
       this.mesh.dispose();
       this.mesh = null;
     }
-    this.result = null;
+    this.path = null;
+    this.playhead = null;
     this.playing = false;
     this.extruding = false;
-    this.moveIdx = 0;
-    this.moveDone = 0;
     this.partial = -1;
-    this.printSeconds = 0;
-    this.totalSeconds = 0;
     this.nozzle.set(0, 0, PARK_Z);
     this.fileName = 'no_model.gcode';
     this.placeHead();
   }
 
-  load(result: SliceResult): void {
+  load(path: Toolpath): void {
     if (!this.rig || !this.spec) return;
     this.clearPrint();
-    this.result = result;
+    this.path = path;
+    this.playhead = new Playhead(path, PARK_Z);
+    this.before = extrusionsBefore(path);
+    const extrusions = this.before[path.count];
 
     const geo = new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1);
     geo.rotateZ(Math.PI / 2);
     const mat = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.02 });
-    const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, result.extrudeCount));
+    const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, extrusions));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
 
-    this.instanceOf = new Int32Array(result.moves.length).fill(-1);
     const color = new THREE.Color();
     const sum = [0, 0, 0];
-    let n = 0;
-    result.moves.forEach((m, i) => {
-      if (m.kind === MoveKind.Travel) return;
-      this.instanceOf[i] = n;
-      this.writeMatrix(mesh, n, m, 1);
-      color.setRGB(m.color[0] / 255, m.color[1] / 255, m.color[2] / 255, THREE.SRGBColorSpace);
+    for (let i = 0; i < path.count; i++) {
+      if (!isExtrusion(path.kind[i])) continue;
+      const n = this.before[i];
+      this.writeMatrix(mesh, n, i, 1);
+      const c = path.color[i];
+      const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+      color.setRGB(r / 255, g / 255, b / 255, THREE.SRGBColorSpace);
       mesh.setColorAt(n, color);
-      sum[0] += m.color[0];
-      sum[1] += m.color[1];
-      sum[2] += m.color[2];
-      n++;
-    });
+      sum[0] += r;
+      sum[1] += g;
+      sum[2] += b;
+    }
     mesh.count = 0;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.instanceMatrix.needsUpdate = true;
@@ -287,51 +287,46 @@ export class PrinterScene {
     this.mesh = mesh;
     this.rig.printParent.add(mesh);
 
-    const k = Math.max(1, n) * 255;
+    const k = Math.max(1, extrusions) * 255;
     this.rig.setFilamentColor(new THREE.Color().setRGB(sum[0] / k, sum[1] / k, sum[2] / k, THREE.SRGBColorSpace));
-    this.totalSeconds = result.extrudeMm / this.spec.printSpeed + result.travelMm / this.spec.travelSpeed;
   }
 
   restart(): void {
-    if (this.mesh && this.partial >= 0) this.restorePartial();
-    this.partial = -1;
-    this.moveIdx = 0;
-    this.moveDone = 0;
-    this.printSeconds = 0;
-    if (this.mesh) this.mesh.count = 0;
-    this.nozzle.set(0, 0, PARK_Z);
-    this.extruding = false;
-    this.placeHead();
+    this.seek(0);
   }
 
   finish(): void {
-    if (!this.result || !this.mesh) return;
-    if (this.partial >= 0) this.restorePartial();
-    this.partial = -1;
-    this.moveIdx = this.result.moves.length;
-    this.moveDone = 0;
-    this.mesh.count = this.result.extrudeCount;
-    this.printSeconds = this.totalSeconds;
+    if (!this.path) return;
+    this.seek(this.path.count);
     this.playing = false;
+  }
+
+  /** Jump to the start of move `index`: everything before it is printed, nothing after. */
+  seek(index: number): void {
+    const ph = this.playhead, mesh = this.mesh;
+    if (!ph || !mesh) return;
+    this.restorePartial();
+    ph.seek(index);
+    mesh.count = this.before[ph.index];
     this.extruding = false;
-    const last = this.result.moves[this.result.moves.length - 1];
-    this.nozzle.set(0, 0, (last ? last.z : 0) + PARK_Z);
+    this.nozzle.set(ph.head.x, ph.head.y, ph.head.z);
     this.placeHead();
   }
 
   get hasPrint(): boolean {
-    return !!this.result;
+    return !!this.path;
   }
 
   get finished(): boolean {
-    return !!this.result && this.moveIdx >= this.result.moves.length;
+    return !!this.playhead?.finished;
   }
 
   get state(): PrintState {
-    if (!this.result) return this.spec ? 'idle' : 'idle';
-    if (this.finished) return 'done';
+    const ph = this.playhead;
+    if (!ph) return 'idle';
+    if (ph.finished) return 'done';
     if (this.playing) return 'printing';
-    return this.moveIdx > 0 ? 'paused' : 'ready';
+    return ph.index > 0 || ph.done > 0 ? 'paused' : 'ready';
   }
 
   // ---------- Pointer: buttons and knob on the printer ----------
@@ -381,32 +376,27 @@ export class PrinterScene {
 
   // ---------- Animation ----------
 
-  private writeMatrix(mesh: THREE.InstancedMesh, index: number, m: Move, frac: number): void {
-    const r = this.result as SliceResult;
-    const dx = m.x1 - m.x0, dy = m.y1 - m.y0;
-    const len = Math.hypot(dx, dy) * frac;
-    const ang = Math.atan2(dy, dx);
-    this.tmpV.set(m.x0 + (Math.cos(ang) * len) / 2, m.y0 + (Math.sin(ang) * len) / 2, m.z - r.layerHeight / 2);
-    this.tmpQ.setFromAxisAngle(this.zAxis, ang);
-    this.tmpS.set(Math.max(0.01, len + r.lineWidth * 0.45), r.lineWidth, r.layerHeight * 1.05);
-    this.tmpM.compose(this.tmpV, this.tmpQ, this.tmpS);
+  private writeMatrix(mesh: THREE.InstancedMesh, index: number, i: number, frac: number): void {
+    const e = segmentTransform(this.path as Toolpath, i, frac, this.tmpT);
+    this.tmpM.set(e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e[11], 0, 0, 0, 1);
     mesh.setMatrixAt(index, this.tmpM);
   }
 
+  /** Put the part-drawn instance back to full length. */
   private restorePartial(): void {
-    const r = this.result as SliceResult;
-    const mesh = this.mesh as THREE.InstancedMesh;
-    const mi = this.partialMove >= 0 && this.instanceOf[this.partialMove] === this.partial ? this.partialMove : this.instanceOf.indexOf(this.partial);
-    if (mi >= 0) this.writeMatrix(mesh, this.partial, r.moves[mi], 1);
+    const mesh = this.mesh;
+    if (!mesh || this.partial < 0) return;
+    this.writeMatrix(mesh, this.partial, this.partialMove, 1);
     mesh.instanceMatrix.addUpdateRange(this.partial * 16, 16);
     mesh.instanceMatrix.needsUpdate = true;
+    this.partial = -1;
   }
 
   private tick(): void {
     this.timer.update();
     const dt = Math.min(this.timer.getDelta(), 0.1);
-    const newMoves: Move[] = [];
-    if (this.playing && this.result && this.mesh && !this.finished) this.advance(dt, newMoves);
+    let from = 0, to = 0;
+    if (this.playing && this.playhead && this.mesh && !this.finished) [from, to] = this.advance(dt);
     if (!this.playing) this.extruding = false;
     this.updateTemps(dt);
 
@@ -418,7 +408,7 @@ export class PrinterScene {
         this.rig.updatePanel(this.panelState());
       }
     }
-    this.emit(newMoves);
+    this.emit(from, to);
 
     if (this.follow && this.rig) {
       this.tmpV.set(this.nozzle.x, this.nozzle.y, this.nozzle.z);
@@ -444,15 +434,13 @@ export class PrinterScene {
 
   private panelState(): PanelState {
     const spec = this.spec as PrinterSpec;
-    const r = this.result;
-    const cur = r?.moves[Math.min(this.moveIdx, r.moves.length - 1)];
     const heating = this.state !== 'idle' && this.state !== 'done';
     return {
       model: spec.name,
-      file: r ? this.fileName : 'no_model.gcode',
+      file: this.path ? this.fileName : 'no_model.gcode',
       state: this.state,
-      layer: this.finished ? r?.layerCount ?? 0 : cur ? cur.layer + 1 : 0,
-      layerCount: r?.layerCount ?? 0,
+      layer: this.layer,
+      layerCount: this.path?.layerCount ?? 0,
       progress: this.progress,
       nozzle: this.temps.nozzle,
       nozzleTarget: heating ? spec.temps.nozzle : 0,
@@ -460,80 +448,60 @@ export class PrinterScene {
       bedTarget: heating ? spec.temps.bed : 0,
       chamber: spec.temps.chamber === null ? null : this.temps.chamber,
       speed: this.speed,
-      elapsed: this.printSeconds,
-      remaining: Math.max(0, this.totalSeconds - this.printSeconds),
+      elapsed: this.playhead?.seconds ?? 0,
+      remaining: Math.max(0, (this.playhead?.totalSeconds ?? 0) - (this.playhead?.seconds ?? 0)),
       light: this.light,
     };
   }
 
   private get progress(): number {
-    const r = this.result;
-    if (!r || !r.moves.length) return 0;
-    return this.finished ? 1 : this.moveIdx / r.moves.length;
+    const p = this.path, ph = this.playhead;
+    if (!p || !ph || !p.count) return 0;
+    return ph.finished ? 1 : ph.index / p.count;
   }
 
-  private advance(dt: number, newMoves: Move[]): void {
-    const r = this.result as SliceResult;
-    const spec = this.spec as PrinterSpec;
+  /** 1-based layer of the move in progress (layerCount once finished, 0 before a print). */
+  private get layer(): number {
+    const p = this.path, ph = this.playhead;
+    if (!p || !ph) return 0;
+    if (ph.finished) return p.layerCount;
+    return p.count ? p.layer[Math.min(ph.index, p.count - 1)] + 1 : 0;
+  }
+
+  /** Run the print for one frame; returns the range of moves finished. */
+  private advance(dt: number): [number, number] {
+    const ph = this.playhead as Playhead;
     const mesh = this.mesh as THREE.InstancedMesh;
-    let budget = dt * this.speed;
-    const prevPartial = this.partial;
-    let extruding = false;
+    const prev = this.partial, prevMove = this.partialMove;
+    const step = ph.advance(dt * this.speed, (e) => this.onEvent(e));
+    this.spoolAngle += step.extrudedMm * 0.004;
 
-    while (budget > 0 && this.moveIdx < r.moves.length) {
-      const m = r.moves[this.moveIdx];
-      const len = Math.hypot(m.x1 - m.x0, m.y1 - m.y0);
-      const travel = m.kind === MoveKind.Travel;
-      const v = travel ? spec.travelSpeed : spec.printSpeed;
-      const need = (len - this.moveDone) / v;
-      if (!travel) extruding = true;
-      if (need <= budget) {
-        budget -= need;
-        this.printSeconds += need;
-        if (!travel) this.spoolAngle += (len - this.moveDone) * 0.004;
-        const inst = this.instanceOf[this.moveIdx];
-        if (inst >= 0) {
-          if (inst === this.partial) {
-            this.writeMatrix(mesh, inst, m, 1);
-            this.partial = -1;
-          }
-          mesh.count = inst + 1;
-        }
-        newMoves.push(m);
-        this.moveIdx++;
-        this.moveDone = 0;
-        this.nozzle.set(m.x1, m.y1, m.z);
-      } else {
-        this.moveDone += budget * v;
-        this.printSeconds += budget;
-        if (!travel) this.spoolAngle += budget * v * 0.004;
-        budget = 0;
-        const f = this.moveDone / len;
-        this.nozzle.set(m.x0 + (m.x1 - m.x0) * f, m.y0 + (m.y1 - m.y0) * f, m.z);
-        const inst = this.instanceOf[this.moveIdx];
-        if (inst >= 0) {
-          this.writeMatrix(mesh, inst, m, f);
-          this.partial = inst;
-          this.partialMove = this.moveIdx;
-          mesh.count = inst + 1;
-        }
-      }
+    // The move in progress is drawn part-way; one left part-way last frame is now complete.
+    let cur = -1;
+    if (!ph.finished && ph.done > 0 && isExtrusion(ph.path.kind[ph.index])) {
+      cur = this.before[ph.index];
+      this.writeMatrix(mesh, cur, ph.index, ph.fraction);
     }
-
-    const touched = [prevPartial, this.partial].filter((i) => i >= 0);
+    if (prev >= 0 && (prev !== cur || prevMove !== ph.index)) this.writeMatrix(mesh, prev, prevMove, 1);
+    this.partial = cur;
+    this.partialMove = ph.index;
+    mesh.count = this.before[ph.index] + (cur >= 0 ? 1 : 0);
+    // Ranges add up until the next upload (a seek may have queued one), and three.js clears them then.
+    const touched = [prev, cur].filter((i) => i >= 0);
     if (touched.length) {
-      mesh.instanceMatrix.clearUpdateRanges();
       const lo = Math.min(...touched), hi = Math.max(...touched);
       mesh.instanceMatrix.addUpdateRange(lo * 16, (hi - lo + 1) * 16);
       mesh.instanceMatrix.needsUpdate = true;
     }
-    this.extruding = extruding;
-    if (this.moveIdx >= r.moves.length) {
+
+    this.extruding = step.extruding;
+    if (ph.finished) {
       this.playing = false;
       this.extruding = false;
-      this.nozzle.set(0, 0, this.nozzle.z + PARK_Z);
     }
+    this.nozzle.set(ph.head.x, ph.head.y, ph.head.z);
     this.placeHead();
+    return [step.from, step.to];
   }
 
   private placeHead(): void {
@@ -542,20 +510,20 @@ export class PrinterScene {
     this.rig.setSpool(this.spoolAngle);
   }
 
-  private emit(newMoves: Move[]): void {
-    const r = this.result;
-    const cur = r?.moves[Math.min(this.moveIdx, r.moves.length - 1)];
+  private emit(from: number, to: number): void {
+    const ph = this.playhead;
     this.onStatus({
       state: this.state,
-      layer: this.finished ? r?.layerCount ?? 0 : cur ? cur.layer + 1 : 0,
-      layerCount: r?.layerCount ?? 0,
+      layer: this.layer,
+      layerCount: this.path?.layerCount ?? 0,
       progress: this.progress,
-      printSeconds: this.printSeconds,
-      totalSeconds: this.totalSeconds,
+      printSeconds: ph?.seconds ?? 0,
+      totalSeconds: ph?.totalSeconds ?? 0,
       nozzle: this.temps.nozzle,
       bed: this.temps.bed,
       chamber: this.spec?.temps.chamber === null ? null : this.temps.chamber,
-      newMoves,
+      from,
+      to,
     });
   }
 }

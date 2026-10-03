@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { loadMeshFile } from './meshLoad';
 import { buildMeshModel, meshBounds, type MeshData } from './meshModel';
 import { MESH_SAMPLES, sampleMesh } from './meshSamples';
-import { DEFAULT_SLICE_OPTIONS, MoveKind, slice } from './slicer';
+import { DEFAULT_SLICE_OPTIONS, slice } from './slicer';
+import { moveAt, MoveKind, toolpathStats } from './toolpath';
 
 /** Axis-aligned box as a triangle soup, deliberately with mixed winding. */
 function box(w: number, d: number, h: number): Float32Array {
@@ -37,7 +38,7 @@ describe('buildMeshModel', () => {
     const mesh: MeshData = { positions: box(20, 20, 4), color: null, name: 'cube', format: 'STL', upAxis: 'z' };
     const m = buildMeshModel(mesh, opts);
     const r = slice(m, { ...DEFAULT_SLICE_OPTIONS, layerHeight: 1, perimeters: 1 });
-    const wall = r.moves.filter((mv) => mv.kind === MoveKind.Perimeter && mv.layer === 1);
+    const wall = Array.from({ length: r.count }, (_, i) => moveAt(r, i)).filter((mv) => mv.kind === MoveKind.OuterWall && mv.layer === 1);
     const len = wall.reduce((s, mv) => s + Math.hypot(mv.x1 - mv.x0, mv.y1 - mv.y0), 0);
     const expected = 4 * (20 - DEFAULT_SLICE_OPTIONS.lineWidth);
     expect(Math.abs(len - expected) / expected).toBeLessThan(0.05);
@@ -105,7 +106,7 @@ describe('buildMeshModel', () => {
     for (const s of MESH_SAMPLES) {
       const m = buildMeshModel(sampleMesh(s), { ...opts, sizeMm: 80 });
       const r = slice(m, { ...DEFAULT_SLICE_OPTIONS, layerHeight: 2 });
-      expect(r.extrudeCount, s.id).toBeGreaterThan(100);
+      expect(toolpathStats(r).extrudeCount, s.id).toBeGreaterThan(100);
     }
   });
 });

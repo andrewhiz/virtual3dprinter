@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { analyzeImage } from './analyze';
 import { buildModel, DEFAULT_MODEL_OPTIONS, type Model } from './model';
-import { DEFAULT_SLICE_OPTIONS, loopLength, MoveKind, simplifyLoop, slice } from './slicer';
+import { DEFAULT_SLICE_OPTIONS, loopLength, simplifyLoop, slice } from './slicer';
+import { isExtrusion, moveAt, MoveKind, toolpathStats, type Toolpath } from './toolpath';
+
+const movesOf = (p: Toolpath) => Array.from({ length: p.count }, (_, i) => moveAt(p, i));
 
 const cylinder = (r: number, h: number): Model => ({
   mode: 'revolve',
@@ -16,14 +19,14 @@ describe('slice', () => {
   it('cuts a cylinder into the expected number of layers', () => {
     const r = slice(cylinder(20, 10), { ...DEFAULT_SLICE_OPTIONS, layerHeight: 1 });
     expect(r.layerCount).toBe(10);
-    const layers = new Set(r.moves.map((m) => m.layer));
+    const layers = new Set(movesOf(r).map((m) => m.layer));
     expect(layers.size).toBe(10);
   });
 
   it('traces the outer wall at half a line width inside the surface', () => {
     const o = { ...DEFAULT_SLICE_OPTIONS, layerHeight: 1, perimeters: 1 };
     const r = slice(cylinder(20, 1), o);
-    const wall = r.moves.filter((m) => m.kind === MoveKind.Perimeter);
+    const wall = movesOf(r).filter((m) => m.kind === MoveKind.OuterWall);
     const len = wall.reduce((s, m) => s + Math.hypot(m.x1 - m.x0, m.y1 - m.y0), 0);
     const expected = 2 * Math.PI * (20 - o.lineWidth / 2);
     expect(Math.abs(len - expected) / expected).toBeLessThan(0.02);
@@ -32,7 +35,7 @@ describe('slice', () => {
 
   it('keeps infill inside the part', () => {
     const r = slice(cylinder(15, 3), DEFAULT_SLICE_OPTIONS);
-    const infill = r.moves.filter((m) => m.kind === MoveKind.Infill);
+    const infill = movesOf(r).filter((m) => isExtrusion(m.kind) && m.kind !== MoveKind.OuterWall && m.kind !== MoveKind.InnerWall);
     expect(infill.length).toBeGreaterThan(0);
     for (const m of infill) {
       expect(Math.hypot(m.x0, m.y0)).toBeLessThan(15);
@@ -42,9 +45,9 @@ describe('slice', () => {
 
   it('chains moves so each starts where the last ended', () => {
     const r = slice(cylinder(10, 2), DEFAULT_SLICE_OPTIONS);
-    for (let i = 1; i < r.moves.length; i++) {
-      expect(r.moves[i].x0).toBeCloseTo(r.moves[i - 1].x1, 6);
-      expect(r.moves[i].y0).toBeCloseTo(r.moves[i - 1].y1, 6);
+    for (let i = 1; i < r.count; i++) {
+      expect(r.x0[i]).toBeCloseTo(r.x1[i - 1], 6);
+      expect(r.y0[i]).toBeCloseTo(r.y1[i - 1], 6);
     }
   });
 
@@ -57,7 +60,7 @@ describe('slice', () => {
     expect(model.sizeX).toBeCloseTo(30, 0);
     const r = slice(model, DEFAULT_SLICE_OPTIONS);
     expect(r.layerCount).toBe(Math.ceil(70 / DEFAULT_SLICE_OPTIONS.layerHeight));
-    expect(r.extrudeCount).toBeGreaterThan(1000);
+    expect(toolpathStats(r).extrudeCount).toBeGreaterThan(1000);
   });
 });
 

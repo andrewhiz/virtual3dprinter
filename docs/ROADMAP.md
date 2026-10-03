@@ -49,14 +49,14 @@ first, keeps the later PRs small.
    - `width`, `height` and `feed` in mm/s (`Float32Array`).
    - `kind` (`Uint8Array`).
    - `layer` (`Uint32Array`).
-   - `color` (an index into a small palette).
+   - `color` (packed 0xRRGGBB, `Uint32Array`).
 
    A real G-code file can have 2 million moves. As JS objects that is roughly 200 MB. As typed
    arrays it is about 90 MB, and it can be sent to and from a Web Worker without copying.
 2. **More move kinds**, matching what slicers label:
    - Travel, Outer wall, Inner wall, Sparse infill, Solid infill, Top surface.
-   - Skirt/brim, Support, Bridge.
-   - Non-printing kinds: Retract, Wipe, Purge.
+   - Skirt/brim, Support, Bridge, Purge.
+   - Wipe, which moves without depositing. Retractions are timeline events, not moves.
 
    Our own slicer emits Outer wall, Inner wall, Sparse infill, Solid infill and Top surface. The
    rest come from G-code files.
