@@ -1,19 +1,19 @@
 # Feature roadmap
 
 A plan for the next round of features. Each numbered section below is meant to land as its own
-pull request, in the order given under [Build order](#build-order). Nothing here is built yet.
-The design choices are settled under [Decisions](#decisions).
+pull request, in the order given under [Build order](#build-order). The design choices are
+settled under [Decisions](#decisions).
 
-| # | Feature | Size | Depends on |
-| --- | --- | --- | --- |
-| 0 | [Toolpath foundation](#0-toolpath-foundation) (no visible change) | M | – |
-| 1 | [Play a real G-code file](#1-play-a-real-g-code-file) | L | 0 |
-| 2 | [Failure mode](#2-failure-mode) | L | 0 (3 helps) |
-| 3 | [Slicer-style preview](#3-slicer-style-preview) | M | 0 |
-| 4 | [Pre-print ritual](#4-pre-print-ritual) | S–M | 0 |
-| 6 | [Sound](#6-sound) | M | 0 (4 helps) |
-| 9 | [Better stats](#9-better-stats) | S | – |
-| 10 | [Iconic samples](#10-iconic-samples) | S | – |
+| # | Feature | Size | Depends on | Status |
+| --- | --- | --- | --- | --- |
+| 0 | [Toolpath foundation](#0-toolpath-foundation) (no visible change) | M | – | Done |
+| 1 | [Play a real G-code file](#1-play-a-real-g-code-file) | L | 0 | Planned |
+| 2 | [Failure mode](#2-failure-mode) | L | 0 (3 helps) | Planned |
+| 3 | [Slicer-style preview](#3-slicer-style-preview) | M | 0 | Planned |
+| 4 | [Pre-print ritual](#4-pre-print-ritual) | S–M | 0 | Planned |
+| 6 | [Sound](#6-sound) | M | 0 (4 helps) | Planned |
+| 9 | [Better stats](#9-better-stats) | S | – | Planned |
+| 10 | [Iconic samples](#10-iconic-samples) | S | – | Done |
 
 Feature numbers match the original idea list. Not planned: 5 (time-lapse), 7 (supports, brim and
 raft) and 8 (colour changes). Real G-code files can still contain supports, brims and colour
@@ -403,6 +403,10 @@ speed; stats use 0.2 mm" (decision 2 below).
 ## 10. Iconic samples
 
 New entries in `meshSamples.ts`, all generated in code: closed, outward-facing shells as today.
+
+**Built:** the tugboat (the default sample), the calibration cube and the stringing test. The cube
+loads at 40 mm (twice the classic 20 mm) so its letters stay crisp at this app's line width; the
+tugboat loads at 100 mm. The overhang fan and bridge test are left for later.
 
 - **Calibration cube.** A 20 mm cube with raised X, Y and Z letters on the matching faces. Each
   letter is a few overlapping prisms (rectangles); the existing `prism` helper and non-zero fill

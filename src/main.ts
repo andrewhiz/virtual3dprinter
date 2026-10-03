@@ -449,8 +449,9 @@ function loadMesh(mesh: MeshData): void {
   // Start at the file's real size (treated as mm) when it fits, otherwise the largest that does.
   const b = meshBounds(mesh.positions, upAxis);
   const size = $<HTMLInputElement>('size');
-  // Built-in samples load at least 8 cm long so small ones (the pawn) read well on the bed.
-  const longest = Math.max(b.x, b.y, b.z, mesh.format === 'Sample' ? 80 : 0);
+  // Built-in samples load at their chosen size, or at least 8 cm long so small ones (the pawn)
+  // read well on the bed.
+  const longest = mesh.printSize ?? Math.max(b.x, b.y, b.z, mesh.format === 'Sample' ? 80 : 0);
   size.value = String(Math.round(Math.min(Number(size.max), Math.max(Number(size.min), longest))));
   size.dispatchEvent(new Event('input'));
   window.clearTimeout(rebuildTimer);

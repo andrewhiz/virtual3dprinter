@@ -11,7 +11,8 @@ virtual printer build it layer by layer, right in your browser.
 It's a toy: nothing gets exported or printed. It's just fun to watch.
 
 - Three detailed printers (bed-slinger, CoreXY, delta) with working on-printer buttons.
-- Nine built-in 3D samples, plus your own model files or photos.
+- Twelve built-in 3D samples, including a tugboat and a calibration cube, plus your own model
+  files or photos.
 - Runs entirely in the browser. No backend, no accounts, no uploads.
 
 ## Quick start
@@ -81,9 +82,10 @@ no server cost. Each layer is cut from the mesh with an even-odd scanline fill (
 and then sliced exactly like photo models. OBJ is assumed Y-up and the others Z-up; there's a
 toggle if a model comes in lying down. Overlapping parts in a file (a handle through a wall) merge into one solid.
 
-Step two opens with a sample already printing. The nine built-in samples are generated 3D
-models (`src/meshSamples.ts`): vase, boxy SUV, rocket, chess pawn, rubber duck, coffee mug, twisted
-vase, spur gear and hex pencil cup. Photo upload is still there, marked beta, because outline
+Step two opens with a sample already printing. The twelve built-in samples are generated 3D
+models (`src/meshSamples.ts`): a tugboat, a calibration cube with raised X, Y and Z, a stringing
+test, vase, boxy SUV, rocket, chess pawn, rubber duck, coffee mug, twisted vase, spur gear and hex
+pencil cup. The tugboat is our own design, not a copy of 3DBenchy. Photo upload is still there, marked beta, because outline
 detection from a single photo is rough.
 
 Colours come from the photo by default, or you can pick a single filament colour.
