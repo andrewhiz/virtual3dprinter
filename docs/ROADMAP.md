@@ -9,7 +9,7 @@ settled under [Decisions](#decisions).
 | 0 | [Toolpath foundation](#0-toolpath-foundation) (no visible change) | M | – | Done |
 | 1 | [Play a real G-code file](#1-play-a-real-g-code-file) | L | 0 | Planned |
 | 2 | [Failure mode](#2-failure-mode) | L | 0 (3 helps) | Planned |
-| 3 | [Slicer-style preview](#3-slicer-style-preview) | M | 0 | Planned |
+| 3 | [Slicer-style preview](#3-slicer-style-preview) | M | 0 | Done |
 | 4 | [Pre-print ritual](#4-pre-print-ritual) | S–M | 0 | Planned |
 | 6 | [Sound](#6-sound) | M | 0 (4 helps) | Planned |
 | 9 | [Better stats](#9-better-stats) | S | – | Planned |
@@ -252,6 +252,13 @@ into moves.
 ## 3. Slicer-style preview
 
 What people look at in their slicer every day.
+
+**Built:** colour by filament, line type or speed, with a legend; travel lines; a layer slider on
+the left of the view with an "Only" toggle; and the HUD progress bar as a scrubber across the
+whole print (instead of a separate in-layer slider). Our own slicer now prints walls and top
+surfaces slower than infill, so the speed view has something to show. All six infill patterns
+are in `src/infill.ts`; concentric rings come from `contours()` in the slicer. Layer height and
+width colouring wait for G-code files (1).
 
 1. **Colour by.** A segmented control on the transport bar:
    - Filament: today's look.

@@ -8,6 +8,10 @@ A fun side project: turn a product photo into an animated virtual 3D print. Visu
   layer, 0xRRGGBB colour) plus timeline events (temps, fan, dwell...) keyed by move index; moves
   run along the top of their layer. `playback.ts` (`Playhead`) owns timing, seeking and the nozzle
   position; the scene only draws. `fitToBudget` simplifies paths over the GPU segment budget.
+- Preview: `palette.ts` holds line-type and speed colours; the scene recolours instances on a
+  view change, draws travels as one `LineSegments` (drawRange follows playback), and hides layers
+  below the current one with a per-instance `aLayer` attribute patched into both the material and
+  its shadow depth material. `infill.ts` makes sparse-infill polylines that the slicer clips.
   `printers/` holds one file per machine (`slinger`, `corexy`, `delta`) built from shared `parts.ts`
   and `panel.ts`; each exports a `PrinterSpec` whose `build()` returns a `PrinterRig`. `main.ts` wires the UI.
 - 3D files: `meshLoad.ts` (Three.js loaders, lazy) -> `meshModel.ts` (per-layer even-odd fill + SDF) -> slicer.
@@ -15,7 +19,7 @@ A fun side project: turn a product photo into an animated virtual 3D print. Visu
   optional `printSize` is the longest side they load at);
   `meshPreview.ts` draws thumbnails. Mesh fill is non-zero winding with a per-row even-odd fallback,
   so every generated shell must be closed (cap arcs and open ends).
-- `analyze`, `model`, `meshModel`, `slicer`, `toolpath`, `playback`, `gcode` are pure and DOM-free; keep them that way so tests run in Node.
+- `analyze`, `model`, `meshModel`, `slicer`, `infill`, `toolpath`, `playback`, `palette`, `gcode` are pure and DOM-free; keep them that way so tests run in Node.
 - Phones: `printers/quality.ts` lowPower skips PMREM, MSAA, PCF shadows, extra lights and physical
   materials (new mobile GPU drivers crash on them and Chrome then blocks WebGL for the site).
   After a context loss the tab reloads in `safe` mode (also `?safe`): no shadows, 1x pixel ratio. The scene must survive

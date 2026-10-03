@@ -92,6 +92,10 @@
               <span class="label">Infill <output id="infill-out"></output></span>
               <input id="infill" type="range" min="10" max="60" step="5" value="25" />
             </label>
+            <label class="field">
+              <span class="label">Infill pattern</span>
+              <select id="pattern" class="select"></select>
+            </label>
             <div class="field">
               <span class="label" id="color-label">Colour</span>
               <div class="segmented" id="colormode" role="radiogroup" aria-labelledby="color-label">
@@ -119,7 +123,10 @@
             <span class="hud-layer">Layer <strong id="h-layer">0</strong> / <span id="h-layers">0</span></span>
             <span class="hud-time" id="h-time">00:00:00</span>
           </div>
-          <div class="bar"><div class="bar-fill" id="h-bar"></div></div>
+          <div class="bar">
+            <div class="bar-fill" id="h-bar"></div>
+            <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Print position" title="Drag to jump through the print" />
+          </div>
           <div class="temps">
             <span><i class="dot hot"></i>Nozzle <b id="h-noz">24</b>°C</span>
             <span><i class="dot warm"></i>Bed <b id="h-bed">24</b>°C</span>
@@ -128,6 +135,22 @@
         </div>
 
         <pre class="gcode" id="gcode" aria-label="G-code stream" hidden></pre>
+
+        <div class="layers" id="layers" hidden>
+          <output id="layer-out" for="layer">0</output>
+          <input id="layer" type="range" min="0" max="1" value="0" aria-label="Show the print up to layer" />
+          <button type="button" id="layer-only" class="layer-only" aria-pressed="false" title="Show only the current layer">Only</button>
+        </div>
+
+        <div class="viewpanel" id="viewpanel" hidden>
+          <div class="segmented" id="viewmode" role="radiogroup" aria-label="Colour the print by">
+            <button type="button" data-view="filament" role="radio">Filament</button>
+            <button type="button" data-view="type" role="radio">Line type</button>
+            <button type="button" data-view="speed" role="radio">Speed</button>
+          </div>
+          <ul class="legend" id="legend"></ul>
+          <label class="toggle"><input id="travel" type="checkbox" /> Show travel moves</label>
+        </div>
 
         <div class="transport" id="transport" hidden>
           <button type="button" id="restart" class="icon" title="Restart print" aria-label="Restart print">

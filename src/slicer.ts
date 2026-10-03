@@ -1,21 +1,24 @@
 // A small slicer: cuts a field model into layers, traces perimeters with marching squares,
-// fills the inside with alternating diagonal infill, and orders it all into nozzle moves.
+// fills the inside with solid diagonal lines or a sparse infill pattern, and orders it all into
+// nozzle moves.
 
 import type { RGB } from './analyze';
+import { infillPolylines, type InfillPattern } from './infill';
 import type { Model } from './model';
-import { MoveKind, packRGB, ToolpathBuilder, type Toolpath } from './toolpath';
+import { douglasPeucker, MoveKind, packRGB, ToolpathBuilder, type Toolpath } from './toolpath';
 
 export interface SliceOptions {
   layerHeight: number;
   lineWidth: number;
   /** 0..1, sparse infill density. */
   infillDensity: number;
+  infillPattern: InfillPattern;
   perimeters: number;
   /** Solid layers at the bottom and top. */
   solidLayers: number;
   colorMode: 'photo' | 'filament';
   filamentColor: RGB;
-  /** Nozzle speeds in mm/s while extruding and travelling. */
+  /** Nozzle speeds in mm/s for sparse infill and for travel; other lines scale from printSpeed. */
   printSpeed: number;
   travelSpeed: number;
 }
@@ -24,12 +27,21 @@ export const DEFAULT_SLICE_OPTIONS: SliceOptions = {
   layerHeight: 0.8,
   lineWidth: 1.2,
   infillDensity: 0.25,
+  infillPattern: 'lines',
   perimeters: 2,
   solidLayers: 2,
   colorMode: 'photo',
   filamentColor: [255, 140, 60],
   printSpeed: 80,
   travelSpeed: 180,
+};
+
+/** Speed of each kind of line relative to sparse infill: slicers slow down for what shows. */
+const SPEED_FACTOR: Partial<Record<MoveKind, number>> = {
+  [MoveKind.OuterWall]: 0.6,
+  [MoveKind.InnerWall]: 0.8,
+  [MoveKind.SolidInfill]: 0.9,
+  [MoveKind.TopSurface]: 0.7,
 };
 
 interface Grid {
@@ -84,7 +96,7 @@ export function slice(model: Model, o: SliceOptions): Toolpath {
       const color = !travel && o.colorMode === 'photo' ? packRGB(model.color((nx + x1) / 2, (ny + y1) / 2, zs)) : filament;
       out.push({
         x0: nx, y0: ny, z0: z, x1, y1, z1: z,
-        width: lw, height: lh, feed: travel ? o.travelSpeed : o.printSpeed,
+        width: lw, height: lh, feed: travel ? o.travelSpeed : o.printSpeed * (SPEED_FACTOR[kind] ?? 1),
         kind, layer: k, color,
       });
       nx = x1;
@@ -119,12 +131,41 @@ export function slice(model: Model, o: SliceOptions): Toolpath {
       }
     }
 
-    // Infill: diagonal lines, direction alternating each layer, boustrophedon order.
+    // Infill. Solid layers (and the "lines" pattern) are diagonal lines, direction alternating
+    // each layer, in boustrophedon order; other patterns are clipped polylines.
     const top = k >= layerCount - o.solidLayers;
     const solid = top || k < o.solidLayers;
     const fill = top ? MoveKind.TopSurface : solid ? MoveKind.SolidInfill : MoveKind.SparseInfill;
     const spacing = solid ? lw : lw / Math.max(0.05, Math.min(1, o.infillDensity));
     const iso = lw * o.perimeters - lw * 0.3;
+    if (!solid && o.infillPattern !== 'lines') {
+      const R = Math.hypot(model.sizeX, model.sizeY) / 2 + c;
+      const polys =
+        o.infillPattern === 'concentric'
+          ? concentric(grid, iso, spacing, lw)
+          : infillPolylines(o.infillPattern, zs, spacing, R, c * 0.5);
+      const runs: number[][] = [];
+      for (const poly of polys) {
+        for (const run of clipPolyline(grid, iso, poly, c * 0.5)) {
+          if (polylineLength(run) > lw * 0.75) runs.push(simplifyPolyline(run, c * 0.15));
+        }
+      }
+      // Nearest run next, from whichever end is closer.
+      while (runs.length) {
+        let best = 0, bestD = Infinity, rev = false;
+        runs.forEach((r, i) => {
+          const ds = (r[0] - nx) ** 2 + (r[1] - ny) ** 2;
+          const de = (r[r.length - 2] - nx) ** 2 + (r[r.length - 1] - ny) ** 2;
+          if (ds < bestD) [bestD, best, rev] = [ds, i, false];
+          if (de < bestD) [bestD, best, rev] = [de, i, true];
+        });
+        const run = runs.splice(best, 1)[0];
+        const pts = rev ? reversePoints(run) : run;
+        emit(pts[0], pts[1], MoveKind.Travel);
+        for (let q = 2; q < pts.length; q += 2) emit(pts[q], pts[q + 1], fill);
+      }
+      continue;
+    }
     const ang = k % 2 ? -Math.PI / 4 : Math.PI / 4;
     const dx = Math.cos(ang), dy = Math.sin(ang);
     const R = Math.hypot(model.sizeX, model.sizeY) / 2 + c;
@@ -158,6 +199,71 @@ export function slice(model: Model, o: SliceOptions): Toolpath {
   }
 
   return out.build();
+}
+
+/** Rings of infill following the inner wall inwards, `spacing` apart, as closed polylines. */
+function concentric(g: Grid, iso: number, spacing: number, lw: number): number[][] {
+  const out: number[][] = [];
+  for (let level = iso + spacing / 2; out.length < 400; level += spacing) {
+    const loops = contours(g, level).filter((l) => loopLength(l) > lw * 3);
+    if (!loops.length) break;
+    for (const l of loops) out.push([...l, l[0], l[1]]);
+  }
+  return out;
+}
+
+/**
+ * The parts of a polyline inside the layer (field above `iso`), walking it in steps of at most
+ * `step` and cutting where it crosses the edge.
+ */
+function clipPolyline(g: Grid, iso: number, pts: number[], step: number): number[][] {
+  const runs: number[][] = [];
+  let px = pts[0], py = pts[1];
+  let pv = sampleGrid(g, px, py) - iso;
+  let cur: number[] | null = pv > 0 ? [px, py] : null;
+  for (let i = 2; i < pts.length; i += 2) {
+    const ax = pts[i - 2], ay = pts[i - 1], bx = pts[i], by = pts[i + 1];
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / step));
+    for (let j = 1; j <= n; j++) {
+      const qx = ax + ((bx - ax) * j) / n, qy = ay + ((by - ay) * j) / n;
+      const qv = sampleGrid(g, qx, qy) - iso;
+      if ((pv > 0) !== (qv > 0)) {
+        const t = pv / (pv - qv);
+        const cx = px + (qx - px) * t, cy = py + (qy - py) * t;
+        if (cur) {
+          cur.push(cx, cy);
+          runs.push(cur);
+          cur = null;
+        } else {
+          cur = [cx, cy];
+        }
+      }
+      if (cur && j === n) cur.push(qx, qy);
+      px = qx;
+      py = qy;
+      pv = qv;
+    }
+  }
+  if (cur && cur.length >= 4) runs.push(cur);
+  return runs;
+}
+
+function polylineLength(pts: number[]): number {
+  let len = 0;
+  for (let i = 2; i < pts.length; i += 2) len += Math.hypot(pts[i] - pts[i - 2], pts[i + 1] - pts[i - 1]);
+  return len;
+}
+
+function simplifyPolyline(pts: number[], eps: number): number[] {
+  const xyz: number[] = [];
+  for (let i = 0; i < pts.length; i += 2) xyz.push(pts[i], pts[i + 1], 0);
+  return douglasPeucker(xyz, eps).flatMap((k) => [pts[k * 2], pts[k * 2 + 1]]);
+}
+
+function reversePoints(pts: number[]): number[] {
+  const out: number[] = [];
+  for (let i = pts.length - 2; i >= 0; i -= 2) out.push(pts[i], pts[i + 1]);
+  return out;
 }
 
 function sampleGrid(g: Grid, x: number, y: number): number {

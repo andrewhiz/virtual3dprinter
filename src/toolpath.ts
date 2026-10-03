@@ -256,6 +256,61 @@ export function toolpathStats(p: Toolpath): ToolpathStats {
   return s;
 }
 
+/** Display names for move kinds, in the order a legend lists them. */
+export const MOVE_KIND_LABELS: [MoveKind, string][] = [
+  [MoveKind.OuterWall, 'Outer wall'],
+  [MoveKind.InnerWall, 'Inner wall'],
+  [MoveKind.SparseInfill, 'Sparse infill'],
+  [MoveKind.SolidInfill, 'Solid infill'],
+  [MoveKind.TopSurface, 'Top surface'],
+  [MoveKind.Bridge, 'Bridge'],
+  [MoveKind.SkirtBrim, 'Skirt / brim'],
+  [MoveKind.Support, 'Support'],
+  [MoveKind.Purge, 'Purge'],
+  [MoveKind.Wipe, 'Wipe'],
+  [MoveKind.Travel, 'Travel'],
+];
+
+export interface KindStats {
+  mm: number;
+  volumeMm3: number;
+  seconds: number;
+}
+
+/** Length, plastic and time per move kind (indexed by MoveKind). */
+export function statsByKind(p: Toolpath): KindStats[] {
+  const out = Array.from({ length: MOVE_KIND_LABELS.length }, () => ({ mm: 0, volumeMm3: 0, seconds: 0 }));
+  for (let i = 0; i < p.count; i++) {
+    const s = out[p.kind[i]], len = moveLength(p, i);
+    s.mm += len;
+    s.seconds += moveSeconds(p, i);
+    if (isExtrusion(p.kind[i])) s.volumeMm3 += len * p.width[i] * p.height[i];
+  }
+  return out;
+}
+
+/** starts[k] = index of the first move on layer k or above (length layerCount + 1). */
+export function layerStarts(p: Toolpath): Uint32Array {
+  const out = new Uint32Array(p.layerCount + 1);
+  let i = 0;
+  for (let k = 0; k <= p.layerCount; k++) {
+    while (i < p.count && p.layer[i] < k) i++;
+    out[k] = i;
+  }
+  return out;
+}
+
+/** Feed range of the extrusion moves, in mm/s ([0, 0] when there are none). */
+export function extrusionFeedRange(p: Toolpath): [number, number] {
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < p.count; i++) {
+    if (!isExtrusion(p.kind[i])) continue;
+    lo = Math.min(lo, p.feed[i]);
+    hi = Math.max(hi, p.feed[i]);
+  }
+  return lo <= hi ? [lo, hi] : [0, 0];
+}
+
 /** before[i] = how many extrusion moves come before move i (length count + 1). */
 export function extrusionsBefore(p: Toolpath): Uint32Array {
   const out = new Uint32Array(p.count + 1);

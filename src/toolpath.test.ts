@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   douglasPeucker,
+  extrusionFeedRange,
   extrusionsBefore,
   fitToBudget,
   isExtrusion,
+  layerStarts,
   moveAt,
   MoveKind,
   packRGB,
   segmentTransform,
+  statsByKind,
   ToolpathBuilder,
   toolpathStats,
   unpackRGB,
@@ -190,5 +193,31 @@ describe('douglasPeucker', () => {
   it('keeps corners and drops points on straight lines', () => {
     const pts = [0, 0, 0, 1, 0, 0, 2, 0, 0, 2, 1, 0, 2, 2, 0];
     expect(douglasPeucker(pts, 0.01)).toEqual([0, 2, 4]);
+  });
+});
+
+describe('layer and kind summaries', () => {
+  const b = new ToolpathBuilder();
+  b.layerCount = 4;
+  b.push(move({ layer: 0, kind: MoveKind.Travel, feed: 150 }));
+  b.push(move({ layer: 0 }));
+  b.push(move({ layer: 2, kind: MoveKind.SparseInfill, feed: 100 }));
+  b.push(move({ layer: 2, kind: MoveKind.Wipe, feed: 5 }));
+  const p = b.build();
+
+  it('finds where each layer starts, including empty ones', () => {
+    expect(Array.from(layerStarts(p))).toEqual([0, 2, 2, 4, 4]);
+  });
+
+  it('splits length, plastic and time by kind', () => {
+    const s = statsByKind(p);
+    expect(s[MoveKind.OuterWall]).toEqual({ mm: expect.closeTo(10), volumeMm3: expect.closeTo(10 * 0.4 * 0.2), seconds: expect.closeTo(0.2) });
+    expect(s[MoveKind.Travel].volumeMm3).toBe(0);
+    expect(s[MoveKind.SparseInfill].seconds).toBeCloseTo(0.1);
+  });
+
+  it('reports the speed range of extrusions only', () => {
+    expect(extrusionFeedRange(p)).toEqual([50, 100]);
+    expect(extrusionFeedRange(new ToolpathBuilder().build())).toEqual([0, 0]);
   });
 });
