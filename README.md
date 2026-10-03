@@ -162,6 +162,11 @@ conventions.
 
 ## Ideas
 
+Planned next, in [docs/ROADMAP.md](docs/ROADMAP.md): play real G-code files, failure mode,
+slicer-style preview, the pre-print ritual, sound, better stats and new samples.
+
+Further out:
+
 - Use a vision model to classify the object and pick the build mode or a depth profile.
 - Estimate depth from a single photo for true 3D shapes instead of silhouettes.
 - Show supports for overhangs, and add a time-lapse camera mode.
