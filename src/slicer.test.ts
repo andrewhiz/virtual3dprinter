@@ -64,6 +64,22 @@ describe('slice', () => {
   });
 });
 
+describe('feature speeds', () => {
+  it('slows down for walls and top surfaces, and travels fast', () => {
+    const p = slice(cylinder(15, 6), { ...DEFAULT_SLICE_OPTIONS, layerHeight: 1 });
+    const feedOf = (kind: MoveKind) => {
+      for (let i = 0; i < p.count; i++) if (p.kind[i] === kind) return p.feed[i];
+      return NaN;
+    };
+    const o = DEFAULT_SLICE_OPTIONS;
+    expect(feedOf(MoveKind.SparseInfill)).toBe(o.printSpeed);
+    expect(feedOf(MoveKind.OuterWall)).toBeLessThan(feedOf(MoveKind.InnerWall));
+    expect(feedOf(MoveKind.InnerWall)).toBeLessThan(o.printSpeed);
+    expect(feedOf(MoveKind.TopSurface)).toBeLessThan(o.printSpeed);
+    expect(feedOf(MoveKind.Travel)).toBe(o.travelSpeed);
+  });
+});
+
 describe('simplifyLoop', () => {
   it('collapses collinear points on a square', () => {
     const pts: number[] = [];

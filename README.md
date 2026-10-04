@@ -13,6 +13,9 @@ It's a toy: nothing gets exported or printed. It's just fun to watch.
 - Three detailed printers (bed-slinger, CoreXY, delta) with working on-printer buttons.
 - Twelve built-in 3D samples, including a tugboat and a calibration cube, plus your own model
   files or photos.
+- A slicer-style preview: colour the print by line type or speed, show travel moves, and drag
+  the layer slider or progress bar to any point (or view a single layer).
+- Six infill patterns: lines, grid, triangles, gyroid, honeycomb and concentric.
 - Runs entirely in the browser. No backend, no accounts, no uploads.
 
 ## Quick start
@@ -56,8 +59,10 @@ Caddy, Apache, other static hosts and an offline single-file build.
    - **Relief**: lays the photo flat, and darker pixels rise higher. Used when there is no clear
      outline to cut out.
 3. **Slice it** (`src/slicer.ts`). Each layer is sampled on a grid. Two walls are traced with
-   marching squares. Diagonal infill alternates direction every layer, and the top and bottom
-   layers are solid. The moves are then ordered to keep travel between them short.
+   marching squares. Sparse infill uses the chosen pattern (`src/infill.ts`), clipped to the
+   inside of each layer; the top and bottom layers are solid diagonal lines. Walls and top
+   surfaces print slower than infill, as in a real slicer. The moves are then ordered to keep
+   travel between them short.
 4. **Print it** (`src/scene.ts`, `src/printers/`). First pick one of three machines. Each one has
    its own geometry, kinematics and controls:
    - **Slinger i3**: a Cartesian bed-slinger. The bed runs in Y, the gantry climbs Z, the head
@@ -85,14 +90,19 @@ toggle if a model comes in lying down. Overlapping parts in a file (a handle thr
 Step two opens with a sample already printing. The twelve built-in samples are generated 3D
 models (`src/meshSamples.ts`): a tugboat, a calibration cube with raised X, Y and Z, a stringing
 test, vase, boxy SUV, rocket, chess pawn, rubber duck, coffee mug, twisted vase, spur gear and hex
-pencil cup. The tugboat is our own design, not a copy of 3DBenchy. Photo upload is still there, marked beta, because outline
-detection from a single photo is rough.
+pencil cup. The tugboat is our own design, not a copy of 3DBenchy. Photo upload is still there,
+marked beta, because outline detection from a single photo is rough.
 
 Colours come from the photo by default, or you can pick a single filament colour.
 
 ## Using it
 
 **Full view** hides the settings so the printer fills the browser window (Esc or Close to exit).
+
+**Preview:** the panel at the bottom right colours the print by filament, line type or speed,
+with a legend showing each line type's share of the print time. The slider on the left jumps to
+any layer (**Only** shows just that layer), and the progress bar at the top left is a scrubber.
+Jumping pauses the print; press Resume to carry on from there.
 On phones, and on screens without WebGL, the app lowers render cost, recovers if the browser drops
 the 3D context, and explains what happened instead of showing a black view.
 

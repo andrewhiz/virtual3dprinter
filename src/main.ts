@@ -11,16 +11,18 @@ import '@fontsource/ibm-plex-mono/latin-600.css';
 import './style.css';
 import { analyzeImage, type Analysis, type Mode, type RGB } from './analyze';
 import { GcodeWriter } from './gcode';
+import { INFILL_PATTERNS, type InfillPattern } from './infill';
 import { buildModel, DEFAULT_MODEL_OPTIONS, type Model } from './model';
 import { loadMeshFile, meshExtension } from './meshLoad';
 import { buildMeshModel, meshBounds, type MeshData } from './meshModel';
 import { drawMeshPreview } from './meshPreview';
 import { MESH_SAMPLES, sampleMesh, type MeshSample } from './meshSamples';
+import { KIND_COLORS, speedColor, toCss, type ViewMode } from './palette';
 import { PRINTERS, printerById, type ControlAction, type PrinterSpec } from './printers';
 import { diagnostics, quality, rememberSafeMode, reloadInSafeMode } from './printers/quality';
 import { PrinterScene, type PrintStatus } from './scene';
 import { DEFAULT_SLICE_OPTIONS, slice } from './slicer';
-import { fitToBudget, toolpathStats, type Toolpath } from './toolpath';
+import { extrusionFeedRange, fitToBudget, MOVE_KIND_LABELS, MoveKind, statsByKind, toolpathStats, type Toolpath } from './toolpath';
 
 const MAX_ANALYSIS_PX = 180;
 const GCODE_LINES = 14;
@@ -78,6 +80,8 @@ let meshData: MeshData | null = null;
 let upAxis: 'z' | 'y' = 'z';
 let modeChoice: Mode | 'auto' = 'auto';
 let colorMode: 'photo' | 'filament' = 'photo';
+let infillPattern: InfillPattern = 'lines';
+let viewMode: ViewMode = 'filament';
 const gcode = new GcodeWriter();
 let gcodeLines: string[] = [];
 /** The toolpath being printed. */
@@ -171,6 +175,8 @@ function showStep(): void {
   $('transport').hidden = pick || noView;
   $('gcode').hidden = pick || noView;
   $('hud').hidden = pick || noView;
+  $('layers').hidden = pick || noView;
+  $('viewpanel').hidden = pick || noView;
   $('step-1').classList.toggle('on', pick);
   $('step-2').classList.toggle('on', !pick);
   $('step-1').setAttribute('aria-current', pick ? 'step' : 'false');
@@ -193,6 +199,7 @@ function resetSession(): void {
   $('r-swatch').style.background = 'transparent';
   gcodeLines = [];
   $('gcode').textContent = '';
+  renderLegend();
 }
 
 function syncEmpty(): void {
@@ -257,6 +264,100 @@ for (const [id, out, fmt] of sliders) {
   });
 }
 $('filament').addEventListener('input', scheduleRebuild);
+
+const patternSelect = $<HTMLSelectElement>('pattern');
+for (const p of INFILL_PATTERNS) patternSelect.add(new Option(p.label, p.id));
+patternSelect.value = infillPattern;
+patternSelect.addEventListener('change', () => {
+  infillPattern = patternSelect.value as InfillPattern;
+  scheduleRebuild();
+});
+
+// ---------- Preview: colour by, travel moves, layer slider, scrubber ----------
+
+$('viewmode').addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest('button');
+  if (!b?.dataset.view) return;
+  viewMode = b.dataset.view as ViewMode;
+  setSegmented('viewmode', 'view', viewMode);
+  scene.setViewMode(viewMode);
+  renderLegend();
+});
+$<HTMLInputElement>('travel').addEventListener('change', (e) => {
+  scene.setTravelVisible((e.target as HTMLInputElement).checked);
+  renderLegend();
+});
+
+/** The legend for the current view: share of print time per line type, or the speed scale. */
+function renderLegend(): void {
+  const list = $('legend');
+  list.replaceChildren();
+  if (!path || viewMode === 'filament') return;
+  if (viewMode === 'speed') {
+    const [lo, hi] = extrusionFeedRange(path);
+    const scale = document.createElement('li');
+    scale.className = 'scale';
+    scale.style.background = `linear-gradient(to right, ${[0, 0.25, 0.5, 0.75, 1].map((t) => toCss(speedColor(t))).join(', ')})`;
+    const ends = document.createElement('li');
+    ends.className = 'ends';
+    for (const text of [`${Math.round(lo)} mm/s`, `${Math.round(hi)} mm/s`]) {
+      const span = document.createElement('span');
+      span.textContent = text;
+      ends.append(span);
+    }
+    list.append(scale, ends);
+    return;
+  }
+  const stats = statsByKind(path);
+  const showTravel = $<HTMLInputElement>('travel').checked;
+  const total = stats.reduce((sum, st) => sum + st.seconds, 0) || 1;
+  for (const [kind, label] of MOVE_KIND_LABELS) {
+    const st = stats[kind];
+    if (!st.mm || (kind === MoveKind.Travel && !showTravel) || kind === MoveKind.Wipe) continue;
+    const li = document.createElement('li');
+    const sw = document.createElement('span');
+    sw.className = 'swatch';
+    sw.style.background = toCss(KIND_COLORS[kind]);
+    const name = document.createElement('span');
+    name.textContent = label;
+    const pct = document.createElement('span');
+    pct.className = 'pct';
+    const share = (st.seconds / total) * 100;
+    pct.textContent = share > 0 && share < 1 ? '<1%' : `${Math.round(share)}%`;
+    pct.title = 'Share of print time';
+    li.append(sw, name, pct);
+    list.append(li);
+  }
+}
+
+const layerInput = $<HTMLInputElement>('layer');
+const scrubInput = $<HTMLInputElement>('scrub');
+/** Sliders the user is holding, so playback doesn't move them under the pointer. */
+const held = new Set<HTMLInputElement>();
+for (const input of [layerInput, scrubInput]) {
+  input.addEventListener('pointerdown', () => held.add(input));
+  for (const ev of ['pointerup', 'pointercancel', 'change']) input.addEventListener(ev, () => held.delete(input));
+}
+
+/** Pause, jump, and restart the G-code ticker from the new position. */
+function jump(to: () => void): void {
+  if (!scene.hasPrint) return;
+  scene.playing = false;
+  to();
+  gcode.reset();
+  gcodeLines = [`; jumped to layer ${scene.shownLayer}`];
+  $('gcode').textContent = gcodeLines.join('\n');
+  syncPlay();
+}
+layerInput.addEventListener('input', () => jump(() => scene.seekLayer(Number(layerInput.value))));
+scrubInput.addEventListener('input', () => jump(() => scene.seekFraction(Number(scrubInput.value) / 1000)));
+
+const layerOnly = $<HTMLButtonElement>('layer-only');
+layerOnly.addEventListener('click', () => {
+  const on = layerOnly.getAttribute('aria-pressed') !== 'true';
+  layerOnly.setAttribute('aria-pressed', String(on));
+  scene.setLayerOnly(on);
+});
 
 $('upaxis').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest('button');
@@ -591,6 +692,7 @@ function rebuild(): void {
     ...DEFAULT_SLICE_OPTIONS,
     layerHeight: Number($<HTMLInputElement>('lh').value),
     infillDensity: Number($<HTMLInputElement>('infill').value) / 100,
+    infillPattern,
     colorMode,
     filamentColor,
     printSpeed: selected.printSpeed,
@@ -602,6 +704,7 @@ function rebuild(): void {
   path = fitted.path;
   showStats(sliced);
   scene.load(path);
+  renderLegend();
   scene.fileName = `${sourceName}.gcode`;
   restartPrint();
   scene.playing = true;
@@ -655,6 +758,10 @@ scene.onStatus = (s: PrintStatus) => {
   $('h-layers').textContent = String(s.layerCount);
   $('h-time').textContent = `${clock(s.printSeconds)} / ${clock(s.totalSeconds)}`;
   $('h-bar').style.width = `${s.progress * 100}%`;
+  if (!held.has(scrubInput)) scrubInput.value = String(Math.round(s.progress * 1000));
+  layerInput.max = String(Math.max(1, s.layerCount));
+  if (!held.has(layerInput)) layerInput.value = String(scene.shownLayer);
+  $('layer-out').textContent = layerInput.value;
   if (step === 'work') $('gcode').textContent = gcodeLines.slice(-GCODE_LINES).join('\n');
 };
 
@@ -672,6 +779,7 @@ function toast(msg: string): void {
 setSegmented('mode', 'mode', modeChoice);
 setSegmented('colormode', 'color', colorMode);
 setSegmented('upaxis', 'axis', upAxis);
+setSegmented('viewmode', 'view', viewMode);
 setSource('photo');
 $('filament').hidden = true;
 if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) setSpeed(100);

@@ -8,8 +8,18 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { ControlAction, PanelState, PrinterRig, PrinterSpec } from './printers';
 import { quality } from './printers/quality';
 import { woodTexture } from './printers/surfaces';
+import { KIND_COLORS, speedColor, type ViewMode } from './palette';
 import { Playhead } from './playback';
-import { extrusionsBefore, isExtrusion, segmentTransform, type TimelineEvent, type Toolpath } from './toolpath';
+import {
+  extrusionFeedRange,
+  extrusionsBefore,
+  isExtrusion,
+  layerStarts,
+  MoveKind,
+  segmentTransform,
+  type TimelineEvent,
+  type Toolpath,
+} from './toolpath';
 
 const PARK_Z = 30;
 const AMBIENT = 24;
@@ -48,6 +58,12 @@ export class PrinterScene {
   private playhead: Playhead | null = null;
   /** Instance index of each move's filament segment: extrusionsBefore[i]. */
   private before: Uint32Array = new Uint32Array(1);
+  /** starts[k] = first move of layer k (length layerCount + 1). */
+  private starts: Uint32Array = new Uint32Array(1);
+  /** Travel and wipe moves as thin lines, revealed as the print reaches them. */
+  private travel: THREE.LineSegments | null = null;
+  /** Instances on layers below this are collapsed ("this layer only"); -1 shows all. */
+  private minLayer = { value: -1 };
   /** The instance drawn part-way, and its move. */
   private partial = -1;
   private partialMove = -1;
@@ -62,6 +78,10 @@ export class PrinterScene {
 
   playing = false;
   speed = 25;
+  /** What the filament colours show. */
+  viewMode: ViewMode = 'filament';
+  showTravel = false;
+  layerOnly = false;
   follow = false;
   light = true;
   fileName = 'no_model.gcode';
@@ -237,8 +257,15 @@ export class PrinterScene {
       this.mesh.parent?.remove(this.mesh);
       this.mesh.geometry.dispose();
       (this.mesh.material as THREE.Material).dispose();
+      this.mesh.customDepthMaterial?.dispose();
       this.mesh.dispose();
       this.mesh = null;
+    }
+    if (this.travel) {
+      this.travel.parent?.remove(this.travel);
+      this.travel.geometry.dispose();
+      (this.travel.material as THREE.Material).dispose();
+      this.travel = null;
     }
     this.path = null;
     this.playhead = null;
@@ -256,39 +283,134 @@ export class PrinterScene {
     this.path = path;
     this.playhead = new Playhead(path, PARK_Z);
     this.before = extrusionsBefore(path);
+    this.starts = layerStarts(path);
     const extrusions = this.before[path.count];
 
     const geo = new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1);
     geo.rotateZ(Math.PI / 2);
+    const layerOf = new Float32Array(Math.max(1, extrusions));
+    geo.setAttribute('aLayer', new THREE.InstancedBufferAttribute(layerOf, 1));
     const mat = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.02 });
+    addLayerFilter(mat, this.minLayer);
     const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, extrusions));
+    // Shadows must hide the same layers, so the shadow pass gets the same filter.
+    const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+    addLayerFilter(depth, this.minLayer);
+    mesh.customDepthMaterial = depth;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
 
-    const color = new THREE.Color();
     const sum = [0, 0, 0];
+    const travel: number[] = [];
     for (let i = 0; i < path.count; i++) {
-      if (!isExtrusion(path.kind[i])) continue;
+      if (!isExtrusion(path.kind[i])) {
+        travel.push(path.x0[i], path.y0[i], path.z0[i], path.x1[i], path.y1[i], path.z1[i]);
+        continue;
+      }
       const n = this.before[i];
       this.writeMatrix(mesh, n, i, 1);
+      layerOf[n] = path.layer[i];
       const c = path.color[i];
-      const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
-      color.setRGB(r / 255, g / 255, b / 255, THREE.SRGBColorSpace);
-      mesh.setColorAt(n, color);
-      sum[0] += r;
-      sum[1] += g;
-      sum[2] += b;
+      sum[0] += (c >> 16) & 255;
+      sum[1] += (c >> 8) & 255;
+      sum[2] += c & 255;
     }
     mesh.count = 0;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     this.mesh = mesh;
+    this.recolor();
     this.rig.printParent.add(mesh);
+
+    const tgeo = new THREE.BufferGeometry();
+    tgeo.setAttribute('position', new THREE.Float32BufferAttribute(travel, 3));
+    const tmat = new THREE.LineBasicMaterial({ color: KIND_COLORS[MoveKind.Travel], transparent: true, opacity: 0.6, depthWrite: false });
+    this.travel = new THREE.LineSegments(tgeo, tmat);
+    this.travel.frustumCulled = false;
+    this.travel.visible = this.showTravel;
+    this.rig.printParent.add(this.travel);
+    this.updateFilters();
 
     const k = Math.max(1, extrusions) * 255;
     this.rig.setFilamentColor(new THREE.Color().setRGB(sum[0] / k, sum[1] / k, sum[2] / k, THREE.SRGBColorSpace));
+  }
+
+  /** Colour the filament by its own colour, by line type or by speed. */
+  setViewMode(mode: ViewMode): void {
+    this.viewMode = mode;
+    this.recolor();
+  }
+
+  setTravelVisible(on: boolean): void {
+    this.showTravel = on;
+    if (this.travel) this.travel.visible = on;
+  }
+
+  setLayerOnly(on: boolean): void {
+    this.layerOnly = on;
+    this.updateFilters();
+  }
+
+  get layerCount(): number {
+    return this.path?.layerCount ?? 0;
+  }
+
+  /** Show layers 1..n complete and nothing above (n is 1-based, like the HUD). */
+  seekLayer(n: number): void {
+    if (!this.path) return;
+    this.seek(this.starts[Math.max(0, Math.min(this.path.layerCount, Math.round(n)))]);
+  }
+
+  /** Jump to a fraction 0..1 of the way through the moves. */
+  seekFraction(f: number): void {
+    if (!this.path) return;
+    this.seek(Math.round(Math.max(0, Math.min(1, f)) * this.path.count));
+  }
+
+  /**
+   * 1-based layer the print has reached: the one in progress, or the last one finished (so a
+   * jump to "layer 40" reads 40). 0 before a print, layerCount once finished.
+   */
+  get shownLayer(): number {
+    const p = this.path, ph = this.playhead;
+    if (!p || !ph || !p.count) return 0;
+    if (ph.finished) return p.layerCount;
+    if (ph.done > 0 || ph.index === 0) return p.layer[ph.index] + 1;
+    return p.layer[ph.index - 1] + 1;
+  }
+
+  private recolor(): void {
+    const p = this.path, mesh = this.mesh;
+    if (!p || !mesh) return;
+    const [lo, hi] = extrusionFeedRange(p);
+    const color = new THREE.Color();
+    for (let i = 0; i < p.count; i++) {
+      if (!isExtrusion(p.kind[i])) continue;
+      const c =
+        this.viewMode === 'type'
+          ? KIND_COLORS[p.kind[i] as MoveKind]
+          : this.viewMode === 'speed'
+            ? speedColor(hi > lo ? (p.feed[i] - lo) / (hi - lo) : 0.5)
+            : p.color[i];
+      color.setRGB(((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255, THREE.SRGBColorSpace);
+      mesh.setColorAt(this.before[i], color);
+    }
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+
+  /** "This layer only" cut-off, and how many travel lines to draw. */
+  private updateFilters(): void {
+    const p = this.path, ph = this.playhead;
+    if (!p || !ph) return;
+    const layer = this.shownLayer - 1;
+    this.minLayer.value = this.layerOnly ? layer : -1;
+    if (this.travel) {
+      const from = this.layerOnly ? this.starts[Math.max(0, layer)] : 0;
+      const first = from - this.before[from];
+      const upTo = ph.index - this.before[ph.index];
+      this.travel.geometry.setDrawRange(first * 2, Math.max(0, upTo - first) * 2);
+    }
   }
 
   restart(): void {
@@ -311,6 +433,7 @@ export class PrinterScene {
     this.extruding = false;
     this.nozzle.set(ph.head.x, ph.head.y, ph.head.z);
     this.placeHead();
+    this.updateFilters();
   }
 
   get hasPrint(): boolean {
@@ -439,7 +562,7 @@ export class PrinterScene {
       model: spec.name,
       file: this.path ? this.fileName : 'no_model.gcode',
       state: this.state,
-      layer: this.layer,
+      layer: this.shownLayer,
       layerCount: this.path?.layerCount ?? 0,
       progress: this.progress,
       nozzle: this.temps.nozzle,
@@ -460,13 +583,6 @@ export class PrinterScene {
     return ph.finished ? 1 : ph.index / p.count;
   }
 
-  /** 1-based layer of the move in progress (layerCount once finished, 0 before a print). */
-  private get layer(): number {
-    const p = this.path, ph = this.playhead;
-    if (!p || !ph) return 0;
-    if (ph.finished) return p.layerCount;
-    return p.count ? p.layer[Math.min(ph.index, p.count - 1)] + 1 : 0;
-  }
 
   /** Run the print for one frame; returns the range of moves finished. */
   private advance(dt: number): [number, number] {
@@ -501,6 +617,7 @@ export class PrinterScene {
     }
     this.nozzle.set(ph.head.x, ph.head.y, ph.head.z);
     this.placeHead();
+    this.updateFilters();
     return [step.from, step.to];
   }
 
@@ -514,7 +631,7 @@ export class PrinterScene {
     const ph = this.playhead;
     this.onStatus({
       state: this.state,
-      layer: this.layer,
+      layer: this.shownLayer,
       layerCount: this.path?.layerCount ?? 0,
       progress: this.progress,
       printSeconds: ph?.seconds ?? 0,
@@ -526,6 +643,20 @@ export class PrinterScene {
       to,
     });
   }
+}
+
+/**
+ * Collapse filament instances below `minLayer.value` to nothing, for "this layer only". Each
+ * instance carries its layer in the `aLayer` attribute.
+ */
+function addLayerFilter(mat: THREE.Material, minLayer: { value: number }): void {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uMinLayer = minLayer;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aLayer;\nuniform float uMinLayer;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nif (aLayer < uMinLayer) transformed = vec3(0.0);');
+  };
+  mat.customProgramCacheKey = () => 'layer-filter';
 }
 
 function pegboard(): THREE.CanvasTexture {

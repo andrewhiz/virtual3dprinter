@@ -305,8 +305,89 @@ input[type='color'] { width: 100%; height: 32px; border: 1px solid var(--line); 
 .hud-layer { font: 600 15px var(--font-display); letter-spacing: 0.02em; white-space: nowrap; }
 .hud-layer strong { color: var(--hot); font-variant-numeric: tabular-nums; }
 .hud-time { font: 12px var(--font-mono); white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
-.bar { height: 4px; background: var(--raised); border-radius: 2px; overflow: hidden; }
-.bar-fill { height: 100%; width: 0; background: var(--hot); }
+.bar { position: relative; height: 4px; background: var(--raised); border-radius: 2px; }
+.bar-fill { height: 100%; width: 0; background: var(--hot); border-radius: 2px; }
+/* The progress bar doubles as a scrubber: an invisible range input over it with a visible thumb. */
+.bar input {
+  position: absolute;
+  inset: -6px 0;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.bar input::-webkit-slider-runnable-track { background: transparent; height: 16px; }
+.bar input::-moz-range-track { background: transparent; }
+.bar input::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 12px; height: 12px; margin-top: 2px; border-radius: 50%; background: var(--hot); border: 2px solid var(--ground); }
+.bar input::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: var(--hot); border: 2px solid var(--ground); }
+
+.select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+}
+
+/* Vertical layer slider on the left of the 3D view, like a slicer's. */
+.layers {
+  position: absolute;
+  left: 16px;
+  top: 150px;
+  bottom: 96px;
+  width: 52px;
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: rgba(26, 29, 32, 0.85);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
+}
+.layers output { font: 600 12px var(--font-mono); color: var(--hot); font-variant-numeric: tabular-nums; }
+.layers input { writing-mode: vertical-lr; direction: rtl; flex: 1; min-height: 0; width: 20px; margin: 0; accent-color: var(--hot); cursor: pointer; }
+.layer-only {
+  font-size: 11px;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.layer-only[aria-pressed='true'] { background: var(--hot); color: var(--hot-ink); border-color: var(--hot); font-weight: 600; }
+
+/* Colour-by switch and legend, bottom right above the transport bar. */
+.viewpanel {
+  position: absolute;
+  right: 16px;
+  bottom: 84px;
+  width: 250px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  background: rgba(18, 20, 22, 0.82);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+}
+.viewpanel .segmented button { font-size: 12px; padding: 4px 6px; white-space: nowrap; }
+.legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.legend:empty { display: none; }
+.legend li { display: grid; grid-template-columns: 12px 1fr auto; gap: 8px; align-items: center; }
+.legend .pct { font-family: var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.legend .scale { grid-column: 1 / -1; height: 8px; border-radius: 4px; }
+.legend .ends { grid-column: 1 / -1; display: flex; justify-content: space-between; color: var(--muted); font-family: var(--font-mono); }
 .temps { display: flex; gap: 16px; font-size: 12px; color: var(--muted); }
 .temps b { color: var(--ink); font-family: var(--font-mono); font-weight: 500; }
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
@@ -483,6 +564,10 @@ body[data-source='mesh'] #mode-field { display: none; }
   body.immersive .transport .toggle { display: flex; }
   .transport { gap: 8px 10px; bottom: 10px; padding: 6px 8px; }
   .speed { width: 110px; }
+  .layers { left: 10px; top: 56px; bottom: 112px; width: 44px; }
+  .viewpanel { top: 52px; right: 10px; bottom: auto; width: auto; padding: 6px; }
+  .viewpanel .legend, .viewpanel .toggle { display: none; }
+  body.immersive .viewpanel .legend, body.immersive .viewpanel .toggle { display: flex; }
   .toggle { font-size: 12px; }
   #view { display: none; }
 }
