@@ -29,6 +29,11 @@ A fun side project: turn a product photo into an animated virtual 3D print. Visu
   security headers. Never add CDN scripts, styles, fonts or analytics. `vite.config.ts` copies the CSP
   into a meta tag at build time; `docs/DEPLOYMENT.md` repeats the header values for other hosts, so
   update it whenever `public/_headers` changes.
+- SEO and well-known files: `index.html` holds the canonical URL, Open Graph/Twitter tags and JSON-LD
+  (a data block, so the CSP allows it), all pointing at the live domain; `public/` holds `robots.txt`,
+  `sitemap.xml`, `manifest.webmanifest`, `og-image.png` (1200x630 app screenshot), icons, `404.html`
+  (Workers `not_found_handling: 404-page`, so unknown paths return a real 404) and
+  `.well-known/security.txt`, whose `Expires` must be renewed before it passes.
 - `vite.config.ts` is typechecked by `tsconfig.node.json` (Node types); `src/` uses `tsconfig.json` (browser only).
 - Filament is one InstancedMesh; only upload the instance ranges that change per frame.
 - Commands: `npm run dev`, `npm test`, `npm run typecheck`, `npm run build`, `npm run deploy`.

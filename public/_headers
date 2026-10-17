@@ -1,16 +1,19 @@
 # Security and caching headers for Cloudflare Workers static assets (copied into dist/ by Vite).
 # The app is fully client-side: scripts, styles and fonts all come from this origin. Sample
 # thumbnails are data: URLs, and 3MF textures load from blob: URLs.
-# Nothing is fetched from another origin.
+# Nothing is fetched from another origin, so COEP require-corp costs nothing.
+# Browsers ignore HSTS on plain HTTP, so it is safe on LAN hosts too.
 # vite.config.ts copies the CSP into a meta tag; docs/DEPLOYMENT.md repeats these values for other hosts.
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
-  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), midi=(), accelerometer=(), gyroscope=(), magnetometer=(), display-capture=(), browsing-topics=()
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  Strict-Transport-Security: max-age=63072000; includeSubDomains
 
 # Vite fingerprints everything under /assets/, so those files never change.
 /assets/*

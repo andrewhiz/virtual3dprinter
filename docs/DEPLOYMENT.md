@@ -31,13 +31,15 @@ and Netlify read it directly. For other servers, copy the values below and keep 
 
 | Header | Value |
 | --- | --- |
-| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests` |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests` |
 | `X-Content-Type-Options` | `nosniff` |
 | `X-Frame-Options` | `DENY` |
 | `Referrer-Policy` | `no-referrer` |
-| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), midi=(), accelerometer=(), gyroscope=(), magnetometer=(), display-capture=(), browsing-topics=()` |
 | `Cross-Origin-Opener-Policy` | `same-origin` |
 | `Cross-Origin-Resource-Policy` | `same-origin` |
+| `Cross-Origin-Embedder-Policy` | `require-corp` |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains` |
 | `Cache-Control` (only `/assets/*`) | `public, max-age=31536000, immutable` |
 
 **Built-in fallback:** the build also copies the CSP into a `<meta>` tag in `dist/index.html`, so
@@ -47,7 +49,23 @@ so framing protection needs the real `X-Frame-Options` / CSP header.
 **Plain HTTP on a LAN:** `upgrade-insecure-requests` makes the browser load assets over HTTPS. If
 you serve the site over plain `http://` on something other than `localhost` (for example
 `http://192.168.1.20` on a Raspberry Pi), remove that directive from your server's CSP, or the page
-won't load. The meta-tag fallback already leaves it out.
+won't load. The meta-tag fallback already leaves it out. Browsers ignore
+`Strict-Transport-Security` on plain HTTP, so it does no harm there.
+
+**HSTS:** `Strict-Transport-Security` tells browsers to use HTTPS only for two years. Only send it
+once the site works over HTTPS. It is deliberately not `preload`, which would need the apex domain.
+
+## Running your own copy
+
+The canonical link, social-preview tags and structured data in `index.html`, plus
+`public/robots.txt`, `public/sitemap.xml` and `public/.well-known/security.txt`, all name
+`https://virtual3dprinter.onthejourney.online/`. If you host a fork on another domain, replace that
+URL in those files (and update `security.txt`'s contact), or search engines will treat your copy as
+a duplicate of the original.
+
+Unknown paths should return `404.html` with a 404 status rather than the app with a 200, so search
+engines don't index endless copies of the home page. Cloudflare does this through
+`not_found_handling` in `wrangler.jsonc`; Netlify and GitHub Pages pick up `404.html` automatically.
 
 ---
 
@@ -87,13 +105,15 @@ From the command line: `npm run build && npx netlify-cli deploy --dir=dist --pro
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "Referrer-Policy", "value": "no-referrer" },
-        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), midi=(), accelerometer=(), gyroscope=(), magnetometer=(), display-capture=(), browsing-topics=()" },
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
-        { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" }
+        { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
+        { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains" }
       ]
     },
     {
@@ -198,13 +218,15 @@ server {
     index index.html;
 
     # Remove upgrade-insecure-requests if you serve plain HTTP on a LAN address.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "no-referrer" always;
-    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), midi=(), accelerometer=(), gyroscope=(), magnetometer=(), display-capture=(), browsing-topics=()" always;
     add_header Cross-Origin-Opener-Policy "same-origin" always;
     add_header Cross-Origin-Resource-Policy "same-origin" always;
+    add_header Cross-Origin-Embedder-Policy "require-corp" always;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
 
     # Hashed file names never change. `expires` (unlike add_header) keeps the headers above.
     location /assets/ {
@@ -240,13 +262,15 @@ printer.example.com {
 	file_server
 
 	header {
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "no-referrer"
-		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), midi=(), accelerometer=(), gyroscope=(), magnetometer=(), display-capture=(), browsing-topics=()"
 		Cross-Origin-Opener-Policy "same-origin"
 		Cross-Origin-Resource-Policy "same-origin"
+		Cross-Origin-Embedder-Policy "require-corp"
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
 	}
 	header /assets/* Cache-Control "public, max-age=31536000, immutable"
 }
@@ -259,13 +283,15 @@ Upload the contents of `dist/` to your web root, and add this `.htaccess` next t
 
 ```apache
 <IfModule mod_headers.c>
-  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests"
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests"
   Header always set X-Content-Type-Options "nosniff"
   Header always set X-Frame-Options "DENY"
   Header always set Referrer-Policy "no-referrer"
-  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), midi=(), accelerometer=(), gyroscope=(), magnetometer=(), display-capture=(), browsing-topics=()"
   Header always set Cross-Origin-Opener-Policy "same-origin"
   Header always set Cross-Origin-Resource-Policy "same-origin"
+  Header always set Cross-Origin-Embedder-Policy "require-corp"
+  Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains"
 
   # Every JS, CSS and font file is in assets/ with a content hash in its name.
   <FilesMatch "\.(js|css|woff2?)$">
