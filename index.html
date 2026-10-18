@@ -3,10 +3,46 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Virtual 3D Printer</title>
-    <meta name="description" content="Pick a 3D printer, drop in a 3D model or product photo, and watch it print layer by layer in your browser." />
+    <title>Virtual 3D Printer – watch any 3D model print in your browser</title>
+    <meta name="description" content="Free online 3D print simulator. Pick a printer, drop in an STL, OBJ, 3MF or PLY model or a product photo, and watch it slice and print layer by layer." />
     <meta name="theme-color" content="#121416" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="canonical" href="https://virtual3dprinter.onthejourney.online/" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+
+    <!-- Social previews. Crawlers need absolute URLs. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Virtual 3D Printer" />
+    <meta property="og:title" content="Virtual 3D Printer" />
+    <meta property="og:description" content="Pick a printer, drop in a 3D model or product photo, and watch it print layer by layer in your browser." />
+    <meta property="og:url" content="https://virtual3dprinter.onthejourney.online/" />
+    <meta property="og:image" content="https://virtual3dprinter.onthejourney.online/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A virtual 3D printer part-way through printing a model" />
+    <meta property="og:locale" content="en_GB" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Structured data. A data block, not a script, so the CSP doesn't block it. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Virtual 3D Printer",
+        "url": "https://virtual3dprinter.onthejourney.online/",
+        "description": "Turn a product photo or 3D model (STL, OBJ, 3MF, PLY) into an animated virtual 3D print, in the browser.",
+        "applicationCategory": "DesignApplication",
+        "operatingSystem": "Any (modern web browser with WebGL)",
+        "browserRequirements": "Requires JavaScript and WebGL",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "license": "https://opensource.org/licenses/MIT",
+        "codeRepository": "https://github.com/andrewhiz/virtual3dprinter",
+        "image": "https://virtual3dprinter.onthejourney.online/og-image.png"
+      }
+    </script>
   </head>
   <body>
     <div class="app">
@@ -201,6 +237,11 @@
         <div class="toast" id="toast" hidden></div>
       </main>
     </div>
+    <noscript>
+      <p>Virtual 3D Printer needs JavaScript and WebGL. It slices STL, OBJ, 3MF and PLY models,
+      or a photo of a product, and animates the print layer by layer on a slinger, CoreXY or delta
+      printer. Everything runs on your device; nothing is uploaded.</p>
+    </noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

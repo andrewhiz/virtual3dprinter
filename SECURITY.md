@@ -9,6 +9,10 @@ read in the browser and never uploaded.
 Please report security issues privately through GitHub: open the repository's **Security** tab
 and choose **Report a vulnerability**. Don't open a public issue for anything exploitable.
 
+The site also publishes these details at
+<https://virtual3dprinter.onthejourney.online/.well-known/security.txt> ([RFC 9116](https://www.rfc-editor.org/rfc/rfc9116)).
+Its `Expires` date must be renewed in `public/.well-known/security.txt` before it passes.
+
 Include what you found, how to reproduce it (a sample file helps if it involves parsing), and the
 browser you used. You can expect a reply within a week. This is a side project, so fixes are best
 effort, but they will be credited unless you'd rather stay anonymous.

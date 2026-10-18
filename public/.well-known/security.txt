@@ -1,0 +1,7 @@
+# Security contact for Virtual 3D Printer (RFC 9116). See SECURITY.md for scope.
+# Renew "Expires" before it passes; it must be less than a year away.
+Contact: https://github.com/andrewhiz/virtual3dprinter/security/advisories/new
+Expires: 2027-10-01T00:00:00.000Z
+Policy: https://github.com/andrewhiz/virtual3dprinter/blob/main/SECURITY.md
+Canonical: https://virtual3dprinter.onthejourney.online/.well-known/security.txt
+Preferred-Languages: en

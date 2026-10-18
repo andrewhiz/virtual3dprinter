@@ -1,0 +1,14 @@
+{
+  "name": "Virtual 3D Printer",
+  "short_name": "3D Printer",
+  "description": "Pick a printer, drop in a 3D model or product photo, and watch it print layer by layer.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#121416",
+  "theme_color": "#121416",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
